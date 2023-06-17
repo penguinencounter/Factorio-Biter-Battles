@@ -24,6 +24,9 @@ require 'modules.floaty_chat'
 require 'modules.show_inventory'
 require 'utils.debug.command'
 
+-- In development!
+require 'modules.log_panels'
+
 require 'comfy_panel.main'
 require 'comfy_panel.player_list'
 require 'comfy_panel.admin'
