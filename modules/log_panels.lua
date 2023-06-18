@@ -3,7 +3,9 @@ local Color = require 'utils.color_presets'
 local Event = require 'utils.event'
 
 local this = {
-    events = {},
+    all_events = {},
+    events_by_position = {},
+    next_id = 1
 }
 local Public = {}
 
@@ -18,24 +20,76 @@ Global.register(
 local TARGETS = {
     [defines.relative_gui_type.rocket_silo_gui] = { --[[no properties]] }
 }
-local GUI_TYPE_TO_STRING = {
-    [defines.relative_gui_type.accumulator_gui] = "accumulator",
-    [defines.relative_gui_type.achievement_gui] = "achievement",
-    [defines.relative_gui_type.additional_entity_info_gui] = "additional_entity_info",
-    [defines.relative_gui_type.admin_gui] = "admin",
-    [defines.relative_gui_type.arithmetic_combinator_gui] = "artihmetic_combinator",
+
+local inverse_relative_gui_type = {}
+for k, v in pairs(defines.relative_gui_type) do
+    inverse_relative_gui_type[v] = k
+end
+
+--- @param gui_type defines.relative_gui_type
+--- @return string
+local function rel_gui_to_str(gui_type)
+    return inverse_relative_gui_type[gui_type]
+end
+
+local entity_to_type = {
+    ["rocket-silo"] = defines.relative_gui_type.rocket_silo_gui
 }
+
+--[[ Utilities ]]
+--- @param entity LuaEntity
+local function assign_id(entity)
+    local tags = entity.tags or {}
+    if tags.event_log_id then return end
+    tags.event_log_id = this.next_id
+    this.next_id = this.next_id + 1
+    entity.tags = tags
+    game.print("ID assigned: " .. tags.event_log_id .. " to " .. entity.name, Color.success)
+end
+
+--[[ UI ]]
+---@param player LuaPlayer
+---@param entity LuaEntity
+---@param gui_type defines.relative_gui_type
+local function track(player, entity, gui_type)
+    local ui = player.gui.relative["bb_event_log_" .. rel_gui_to_str(gui_type)]
+    if not ui then
+        game.print("## Could not locate event log for " .. entity.name .. " ##", Color.fail)
+        return
+    end
+    local main = ui.main.children[1] -- frame -> flow
+    local status = main.status
+    if not status then return end
+    local status_icon = status.icon
+    local status_label = status.label
+    status_icon.sprite = "utility/status_yellow"
+    status_label.caption = "Counting events..."
+end
+
+--- @param event EventData.on_gui_opened
+local function on_gui_opened(event)
+    if event.gui_type == defines.gui_type.entity then
+        assign_id(event.entity)
+        local entity_name = event.entity.name
+        if not entity_to_type[entity_name] then return end
+        local gui_type = entity_to_type[entity_name]
+        local player = game.get_player(event.player_index)
+        if not player then return end
+        track(player, event.entity, gui_type)
+    end
+end
+
 
 --- @param gui_type defines.relative_gui_type
 --- @param player LuaPlayer
-local function attach_logger_panel(player, gui_type, tracks)
+local function attach_logger_panel(player, gui_type)
     --- @type GuiAnchor
     local anchor = {
         gui = gui_type,
         position = defines.relative_gui_position.right
     }
     --- @type LuaGuiElement
-    local window = player.gui.relative.add { type = "frame", anchor = anchor, name = "bb_event_log_"..gui_type, direction =
+    local window = player.gui.relative.add { type = "frame", anchor = anchor, name = "bb_event_log_" .. rel_gui_to_str(gui_type), direction =
     "vertical" }
     window.style.vertically_stretchable = true
     window.style.padding = { 4, 8, 8, 8 } -- t, r, b, l
@@ -72,7 +126,7 @@ local function attach_logger_panel(player, gui_type, tracks)
         local status_icon = status.add { type = "sprite", style = "status_image", name = "icon", sprite =
         "utility/status_not_working" }
         --- @type LuaGuiElement
-        status.add { type = "label", caption = "Loading events...", name = "label" }
+        status.add { type = "label", caption = "Script loading error", name = "label" }
     end
 
     --[[ Event list ]]
@@ -93,10 +147,13 @@ local function attach_logger_panel(player, gui_type, tracks)
         --- @type LuaGuiElement
         local clear_filters = action_set.add { type = "sprite-button", style = "tool_button", sprite = "utility/reset", tooltip =
         "Clear filters", name = "attached_log_clear_filters" }
-        local filter_type = action_set.add { type = "sprite-button", style = "tool_button_green", sprite = "utility/search_white", tooltip =
+        clear_filters.enabled = false
+        local filter_type = action_set.add { type = "sprite-button", style = "tool_button_green", sprite =
+        "utility/search_white", tooltip =
         "Show only this type of event", name = "attached_log_filter_type" }
         filter_type.enabled = false
-        local exclude_type = action_set.add { type = "sprite-button", style = "tool_button_red", sprite = "utility/search_black", tooltip =
+        local exclude_type = action_set.add { type = "sprite-button", style = "tool_button_red", sprite =
+        "utility/search_black", tooltip =
         "Exclude this type of event", name = "attached_log_exclude_type" }
         exclude_type.enabled = false
 
@@ -118,9 +175,10 @@ local function attach_panels(event)
 
     if not player then return end
     for gui_type, tracked_items in pairs(TARGETS) do
-        attach_logger_panel(player, gui_type, tracked_items)
+        attach_logger_panel(player, gui_type)
     end
 end
 
 Event.add(defines.events.on_player_created, attach_panels)
-Event.add(defines.events.on_gui_opened, attach_panels)
+Event.add(defines.events.on_gui_opened, on_gui_opened)
+Event.add(defines.events.on_built_entity, assign_id)
