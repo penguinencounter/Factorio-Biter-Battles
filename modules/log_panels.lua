@@ -8,6 +8,8 @@ local Event = require 'utils.event'
 --- | "built_entity"
 --- | "marked_for_deconstruction"
 --- | "cancelled_deconstruction"
+--- | "player_fast_transferred"
+--- | "robot_built_entity"
 
 --- @class PartialLogData
 --- @field public type PartialLogData.type
@@ -28,6 +30,16 @@ local Event = require 'utils.event'
 --- @class CancelledDeconstructionLogData : PartialLogData
 --- @field public type "cancelled_deconstruction"
 --- @field public entity integer
+
+--- @class PlayerFastTransferredLogData : PartialLogData
+--- @field public type "player_fast_transferred"
+--- @field public give boolean
+--- @field public split boolean
+--- @field public entity integer
+
+--- @class RobotBuiltEntityLogData : PartialLogData
+--- @field public type "robot_built_entity"
+--- @field public created_entity integer
 
 --- @class LogData : PartialLogData
 --- @field public order integer
@@ -90,6 +102,13 @@ local function format_color_tag(color)
     return "[color=" .. color.r .. "," .. color.g .. "," .. color.b .. "]"
 end
 
+local info_colors = {
+    deconstruct = format_color_tag { r = 1, g = 0.5, b = 0.5 },
+    cancel_deconstruct = format_color_tag { r = 0.5, g = 1, b = 0.5 },
+    insert = format_color_tag { r = 0.5, g = 0.75, b = 1 },
+    extract = format_color_tag { r = 1, g = 0.75, b = 0.5 },
+}
+
 --- @return integer
 local function next()
     local nnext = this.next
@@ -113,13 +132,13 @@ local function push_event(entity_no, event)
 end
 
 --- Get player name and color.
---- @param player_index integer
+--- @param player_index integer?
 --- @param default_name string
 --- @param default_color Color
 --- @return string, Color
 local function get_name_col(player_index, default_name, default_color)
     --- @cast player_index uint
-    local player = game.get_player(player_index)
+    local player = player_index ~= nil and game.get_player(player_index) or nil
     if not player then return default_name, default_color end
     return player.name, player.color
 end
@@ -136,13 +155,27 @@ end
 --- @param event MarkedForDeconstructionLogData
 function render.marked_for_deconstruction(event)
     local player_name, player_color = get_name_col(event.actor, "<script>", { r = 0.5, g = 0.5, b = 0.5 })
-    return format_color_tag(player_color) .. player_name .. "[/color] [color=red]+deconstruct[/color]"
+    return format_color_tag(player_color) .. player_name .. "[/color] " .. info_colors.deconstruct .. "+deconstruct[/color]"
 end
 
 --- @param event CancelledDeconstructionLogData
 function render.cancelled_deconstruction(event)
     local player_name, player_color = get_name_col(event.actor, "<script>", { r = 0.5, g = 0.5, b = 0.5 })
-    return format_color_tag(player_color) .. player_name .. "[/color] -deconstruct"
+    return format_color_tag(player_color) .. player_name .. "[/color] " .. info_colors.cancel_deconstruct .. "-deconstruct[/color]"
+end
+
+--- @param event PlayerFastTransferredLogData
+function render.player_fast_transferred(event)
+    local player_name, player_color = get_name_col(event.actor, "<unknown>", { r = 0.5, g = 0.5, b = 0.5 })
+    local text_color = event.give and info_colors.insert or info_colors.extract
+    local term = event.give and "inserted" or "extracted"
+    return format_color_tag(player_color) .. player_name .. "[/color] " .. text_color .. term .. " items[/color]"
+end
+
+--- @param event RobotBuiltEntityLogData
+function render.robot_built_entity(event)
+    local player_name, player_color = get_name_col(event.actor, "<unknown>", { r = 0.5, g = 0.5, b = 0.5 })
+    return format_color_tag(player_color) .. player_name .. "[/color] built (robot)"
 end
 
 ---@param player LuaPlayer
@@ -159,7 +192,7 @@ local function track(player, entity, gui_type)
     if not status then return end
     local status_icon = status.icon
     local status_label = status.label
-    status_icon.sprite = "utility/status_working"
+    status_icon.sprite = "utility/status_yellow"
     status_label.caption = "? events"
 
     local event_list = main.event_list_container.children[1].children[1] -- frame -> scroll-pane -> flow
@@ -181,6 +214,8 @@ local function track(player, entity, gui_type)
         event_button.style.padding = { 0, 8 }
         event_button.style.minimal_width = 0
     end
+    status_icon.sprite = "utility/status_working"
+    status_label.caption = "[font=default-bold]" .. #ordered_list .. "[/font] events"
 end
 
 --- @param event EventData.on_gui_opened
@@ -442,6 +477,35 @@ function translate.cancelled_deconstruction(player_index, entity)
     return r
 end
 
+--- @param player_index number
+--- @param entity LuaEntity
+--- @param give boolean
+--- @param split boolean
+--- @return PlayerFastTransferredLogData
+function translate.player_fast_transferred(player_index, entity, give, split)
+    --- @type PlayerFastTransferredLogData
+    local r = {
+        type = "player_fast_transferred",
+        actor = player_index,
+        entity = entity.unit_number,
+        give = give,
+        split = split,
+    }
+    return r
+end
+
+--- @param entity LuaEntity
+--- @return RobotBuiltEntityLogData
+function translate.robot_built_entity(entity)
+    --- @type RobotBuiltEntityLogData
+    local r = {
+        type = "robot_built_entity",
+        entity = entity.unit_number,
+        robot = entity.last_user.index,
+    }
+    return r
+end
+
 --- @param event EventData.on_built_entity
 function prepare.on_built_entity(event)
     if not trackable(event.created_entity) then return end
@@ -472,8 +536,30 @@ function prepare.on_cancelled_deconstruction(event)
     )
 end
 
+--- @param event EventData.on_player_fast_transferred
+function prepare.on_player_fast_transferred(event)
+    if not trackable(event.entity) then return end
+    local entity = event.entity
+    push_event(
+        entity.unit_number,
+        translate.player_fast_transferred(event.player_index, entity, event.from_player, event.is_split)
+    )
+end
+
+--- @param event EventData.on_robot_built_entity
+function prepare.on_robot_built_entity(event)
+    if not trackable(event.created_entity) then return end
+    local entity = event.created_entity
+    push_event(
+        entity.unit_number,
+        translate.robot_built_entity(entity)
+    )
+end
+
 Event.add(defines.events.on_player_created, attach_panels)
 Event.add(defines.events.on_gui_opened, on_gui_opened)
 Event.add(defines.events.on_built_entity, prepare.on_built_entity)
 Event.add(defines.events.on_marked_for_deconstruction, prepare.on_marked_for_deconstruction)
 Event.add(defines.events.on_cancelled_deconstruction, prepare.on_cancelled_deconstruction)
+-- Event.add(defines.events.on_player_fast_transferred, prepare.on_player_fast_transferred) -- extraneous
+Event.add(defines.events.on_robot_built_entity, prepare.on_robot_built_entity)
