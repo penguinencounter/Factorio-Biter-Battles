@@ -10,6 +10,8 @@ local Event = require 'utils.event'
 --- | "cancelled_deconstruction"
 --- | "player_fast_transferred"
 --- | "robot_built_entity"
+--- | "marked_for_upgrade"
+--- | "cancelled_upgrade"
 
 --- @class PartialLogData
 --- @field public type PartialLogData.type
@@ -41,6 +43,16 @@ local Event = require 'utils.event'
 --- @field public type "robot_built_entity"
 --- @field public created_entity integer
 
+--- @class MarkedForUpgradeLogData : PartialLogData
+--- @field public type "marked_for_upgrade"
+--- @field public entity integer
+--- @field public target string LuaEntityPrototype.name
+--- @field public direction defines.direction?
+
+--- @class CancelledUpgradeLogData : PartialLogData
+--- @field public type "cancelled_upgrade"
+--- @field public entity integer
+
 --- @class LogData : PartialLogData
 --- @field public order integer
 
@@ -66,6 +78,7 @@ Global.register(
 local TARGETS = {
     [defines.relative_gui_type.rocket_silo_gui] = {},
     [defines.relative_gui_type.furnace_gui] = {},
+    [defines.relative_gui_type.inserter_gui] = {},
 }
 
 local inverse_relative_gui_type = {}
@@ -84,6 +97,13 @@ local entity_to_type = {
     ["stone-furnace"] = defines.relative_gui_type.furnace_gui,
     ["steel-furnace"] = defines.relative_gui_type.furnace_gui,
     ["electric-furnace"] = defines.relative_gui_type.furnace_gui,
+    ["burner-inserter"] = defines.relative_gui_type.inserter_gui,
+    ["inserter"] = defines.relative_gui_type.inserter_gui,
+    ["long-handed-inserter"] = defines.relative_gui_type.inserter_gui,
+    ["fast-inserter"] = defines.relative_gui_type.inserter_gui,
+    ["filter-inserter"] = defines.relative_gui_type.inserter_gui,
+    ["stack-inserter"] = defines.relative_gui_type.inserter_gui,
+    ["stack-filter-inserter"] = defines.relative_gui_type.inserter_gui,
 }
 
 --[[ Utilities ]]
@@ -104,7 +124,9 @@ end
 
 local info_colors = {
     deconstruct = format_color_tag { r = 1, g = 0.5, b = 0.5 },
-    cancel_deconstruct = format_color_tag { r = 0.5, g = 1, b = 0.5 },
+    cancel_deconstruct = format_color_tag { r = 0.5, g = 0.5, b = 0.5 },
+    upgrade = format_color_tag { r = 0.5, g = 1, b = 0.5 },
+    cancel_upgrade = format_color_tag { r = 0.5, g = 0.5, b = 0.5 },
     insert = format_color_tag { r = 0.5, g = 0.75, b = 1 },
     extract = format_color_tag { r = 1, g = 0.75, b = 0.5 },
 }
@@ -155,13 +177,15 @@ end
 --- @param event MarkedForDeconstructionLogData
 function render.marked_for_deconstruction(event)
     local player_name, player_color = get_name_col(event.actor, "<script>", { r = 0.5, g = 0.5, b = 0.5 })
-    return format_color_tag(player_color) .. player_name .. "[/color] " .. info_colors.deconstruct .. "+deconstruct[/color]"
+    return format_color_tag(player_color) ..
+    player_name .. "[/color] " .. info_colors.deconstruct .. "+deconstruct[/color]"
 end
 
 --- @param event CancelledDeconstructionLogData
 function render.cancelled_deconstruction(event)
     local player_name, player_color = get_name_col(event.actor, "<script>", { r = 0.5, g = 0.5, b = 0.5 })
-    return format_color_tag(player_color) .. player_name .. "[/color] " .. info_colors.cancel_deconstruct .. "-deconstruct[/color]"
+    return format_color_tag(player_color) ..
+    player_name .. "[/color] " .. info_colors.cancel_deconstruct .. "-deconstruct[/color]"
 end
 
 --- @param event PlayerFastTransferredLogData
@@ -176,6 +200,21 @@ end
 function render.robot_built_entity(event)
     local player_name, player_color = get_name_col(event.actor, "<unknown>", { r = 0.5, g = 0.5, b = 0.5 })
     return format_color_tag(player_color) .. player_name .. "[/color] built (robot)"
+end
+
+--- @param event MarkedForUpgradeLogData
+function render.marked_for_upgrade(event)
+    local player_name, player_color = get_name_col(event.actor, "<script>", { r = 0.5, g = 0.5, b = 0.5 })
+    return format_color_tag(player_color) ..
+    player_name ..
+    "[/color] " .. info_colors.upgrade .. "+upgrade to " .. "[img=entity." .. event.target .. "]" .. "[/color]"
+end
+
+--- @param event CancelledUpgradeLogData
+function render.cancelled_upgrade(event)
+    local player_name, player_color = get_name_col(event.actor, "<script>", { r = 0.5, g = 0.5, b = 0.5 })
+    return format_color_tag(player_color) ..
+    player_name .. "[/color] " .. info_colors.cancel_upgrade .. "-upgrade[/color]"
 end
 
 ---@param player LuaPlayer
@@ -198,7 +237,9 @@ local function track(player, entity, gui_type)
     local event_list = main.event_list_container.children[1].children[1] -- frame -> scroll-pane -> flow
     event_list.clear()
 
-    log("got " .. #this.events_by_entity[entity.unit_number] .. " events for " .. entity.unit_number .. ": " .. serpent.line(this.events_by_entity[entity.unit_number]))
+    log("got " ..
+    #this.events_by_entity[entity.unit_number] ..
+    " events for " .. entity.unit_number .. ": " .. serpent.line(this.events_by_entity[entity.unit_number]))
     --- @type LogData[]
     local ordered_list = {}
     for _, event in ipairs(this.events_by_entity[entity.unit_number]) do
@@ -207,7 +248,8 @@ local function track(player, entity, gui_type)
     end
 
     for _, event in ipairs(ordered_list) do
-        local event_button = event_list.add { type = "button", caption = "#" .. event.order .. " " .. render[event.type](event), style = "frame_button" }
+        local event_button = event_list.add { type = "button", caption = "#" ..
+        event.order .. " " .. render[event.type](event), style = "frame_button" }
         event_button.style.font_color = { r = 1, g = 1, b = 1 }
         event_button.style.horizontally_stretchable = true
         event_button.style.horizontal_align = "left"
@@ -451,6 +493,16 @@ function translate.built_entity(player_index, entity)
     return r
 end
 
+--- @param event EventData.on_built_entity
+function prepare.on_built_entity(event)
+    if not trackable(event.created_entity) then return end
+    local entity = event.created_entity
+    push_event(
+        entity.unit_number,
+        translate.built_entity(event.player_index, entity)
+    )
+end
+
 --- @param player_index number?
 --- @param entity LuaEntity
 --- @return MarkedForDeconstructionLogData
@@ -464,6 +516,16 @@ function translate.marked_for_deconstruction(player_index, entity)
     return r
 end
 
+--- @param event EventData.on_marked_for_deconstruction
+function prepare.on_marked_for_deconstruction(event)
+    if not trackable(event.entity) then return end
+    local entity = event.entity
+    push_event(
+        entity.unit_number,
+        translate.marked_for_deconstruction(event.player_index, entity)
+    )
+end
+
 --- @param player_index number
 --- @param entity LuaEntity
 --- @return CancelledDeconstructionLogData
@@ -475,6 +537,16 @@ function translate.cancelled_deconstruction(player_index, entity)
         entity = entity.unit_number
     }
     return r
+end
+
+--- @param event EventData.on_cancelled_deconstruction
+function prepare.on_cancelled_deconstruction(event)
+    if not trackable(event.entity) then return end
+    local entity = event.entity
+    push_event(
+        entity.unit_number,
+        translate.cancelled_deconstruction(event.player_index, entity)
+    )
 end
 
 --- @param player_index number
@@ -494,48 +566,6 @@ function translate.player_fast_transferred(player_index, entity, give, split)
     return r
 end
 
---- @param entity LuaEntity
---- @return RobotBuiltEntityLogData
-function translate.robot_built_entity(entity)
-    --- @type RobotBuiltEntityLogData
-    local r = {
-        type = "robot_built_entity",
-        entity = entity.unit_number,
-        robot = entity.last_user.index,
-    }
-    return r
-end
-
---- @param event EventData.on_built_entity
-function prepare.on_built_entity(event)
-    if not trackable(event.created_entity) then return end
-    local entity = event.created_entity
-    push_event(
-        entity.unit_number,
-        translate.built_entity(event.player_index, entity)
-    )
-end
-
---- @param event EventData.on_marked_for_deconstruction
-function prepare.on_marked_for_deconstruction(event)
-    if not trackable(event.entity) then return end
-    local entity = event.entity
-    push_event(
-        entity.unit_number,
-        translate.marked_for_deconstruction(event.player_index, entity)
-    )
-end
-
---- @param event EventData.on_cancelled_deconstruction
-function prepare.on_cancelled_deconstruction(event)
-    if not trackable(event.entity) then return end
-    local entity = event.entity
-    push_event(
-        entity.unit_number,
-        translate.cancelled_deconstruction(event.player_index, entity)
-    )
-end
-
 --- @param event EventData.on_player_fast_transferred
 function prepare.on_player_fast_transferred(event)
     if not trackable(event.entity) then return end
@@ -544,6 +574,18 @@ function prepare.on_player_fast_transferred(event)
         entity.unit_number,
         translate.player_fast_transferred(event.player_index, entity, event.from_player, event.is_split)
     )
+end
+
+--- @param entity LuaEntity
+--- @return RobotBuiltEntityLogData
+function translate.robot_built_entity(entity)
+    --- @type RobotBuiltEntityLogData
+    local r = {
+        type = "robot_built_entity",
+        created_entity = entity.unit_number,
+        actor = entity.last_user.index,
+    }
+    return r
 end
 
 --- @param event EventData.on_robot_built_entity
@@ -556,6 +598,55 @@ function prepare.on_robot_built_entity(event)
     )
 end
 
+--- @param player_index number?
+--- @param entity LuaEntity
+--- @param target LuaEntityPrototype
+--- @param direction defines.direction?
+--- @return MarkedForUpgradeLogData
+function translate.marked_for_upgrade(player_index, entity, target, direction)
+    --- @type MarkedForUpgradeLogData
+    local r = {
+        type = "marked_for_upgrade",
+        actor = player_index,
+        entity = entity.unit_number,
+        target = target.name,
+        direction = direction,
+    }
+    return r
+end
+
+--- @param event EventData.on_marked_for_upgrade
+function prepare.on_makred_for_upgrade(event)
+    if not trackable(event.entity) then return end
+    local entity = event.entity
+    push_event(
+        entity.unit_number,
+        translate.marked_for_upgrade(event.player_index, entity, event.target, event.direction)
+    )
+end
+
+--- @param player_index number?
+--- @param entity LuaEntity
+function translate.cancelled_upgrade(player_index, entity)
+    --- @type CancelledUpgradeLogData
+    local r = {
+        type = "cancelled_upgrade",
+        actor = player_index,
+        entity = entity.unit_number,
+    }
+    return r
+end
+
+--- @param event EventData.on_cancelled_upgrade
+function prepare.on_cancelled_upgrade(event)
+    if not trackable(event.entity) then return end
+    local entity = event.entity
+    push_event(
+        entity.unit_number,
+        translate.cancelled_upgrade(event.player_index, entity)
+    )
+end
+
 Event.add(defines.events.on_player_created, attach_panels)
 Event.add(defines.events.on_gui_opened, on_gui_opened)
 Event.add(defines.events.on_built_entity, prepare.on_built_entity)
@@ -563,3 +654,5 @@ Event.add(defines.events.on_marked_for_deconstruction, prepare.on_marked_for_dec
 Event.add(defines.events.on_cancelled_deconstruction, prepare.on_cancelled_deconstruction)
 -- Event.add(defines.events.on_player_fast_transferred, prepare.on_player_fast_transferred) -- extraneous
 Event.add(defines.events.on_robot_built_entity, prepare.on_robot_built_entity)
+Event.add(defines.events.on_marked_for_upgrade, prepare.on_makred_for_upgrade)
+Event.add(defines.events.on_cancelled_upgrade, prepare.on_cancelled_upgrade)
