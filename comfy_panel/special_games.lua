@@ -190,7 +190,7 @@ local function generate_infinity_chest(separate_chests, operable, gap, eq)
 
 	elseif separate_chests == "right" then
 		local k = gap + 1
-		for i, v in ipairs(eq) do
+		for i, v in pairs(eq) do
 			local chest = surface.create_entity {
 				name = "infinity-chest",
 				position = position_0,
