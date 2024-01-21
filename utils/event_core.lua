@@ -95,7 +95,7 @@ function Public.add(event_name, handler)
     end
     local handlers = event_handlers[event_name]
     if not handlers then
-        event_handlers[event_name] = {handler}
+        event_handlers[event_name] = { handler }
         script_on_event(event_name, on_event)
     else
         table.insert(handlers, handler)
@@ -109,7 +109,7 @@ end
 function Public.on_init(handler)
     local handlers = event_handlers[init_event_name]
     if not handlers then
-        event_handlers[init_event_name] = {handler}
+        event_handlers[init_event_name] = { handler }
         script.on_init(on_init)
     else
         table.insert(handlers, handler)
@@ -123,7 +123,7 @@ end
 function Public.on_load(handler)
     local handlers = event_handlers[load_event_name]
     if not handlers then
-        event_handlers[load_event_name] = {handler}
+        event_handlers[load_event_name] = { handler }
         script.on_load(on_load)
     else
         table.insert(handlers, handler)
@@ -137,7 +137,7 @@ end
 function Public.on_nth_tick(tick, handler)
     local handlers = on_nth_tick_event_handlers[tick]
     if not handlers then
-        on_nth_tick_event_handlers[tick] = {handler}
+        on_nth_tick_event_handlers[tick] = { handler }
         script_on_nth_tick(tick, on_nth_tick_event)
     else
         table.insert(handlers, handler)
