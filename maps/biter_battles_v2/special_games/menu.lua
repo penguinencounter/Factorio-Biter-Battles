@@ -110,8 +110,24 @@ do
         reset_to_preset = prefix("reset_to_preset"),
         clear_all = prefix("clear_all"),
     }
-    for k, v in pairs(Editor_ElementIDs) do
+    for _, v in pairs(Editor_ElementIDs) do
         click_to_ui_lut[v] = mu.UI_ids.editor
+    end
+end
+
+local EditorExport_ElementIDs
+do
+    local prefix = mu.mk_prefix("special_editor_export")
+    EditorExport_ElementIDs = {
+        global_name = prefix("root"),
+        frame_header = prefix("header"),
+        toplevel_quit_btn = prefix("top_quit"),
+        panes = prefix("panes"),
+
+        output = prefix("output"),
+    }
+    for _, v in pairs(EditorExport_ElementIDs) do
+        click_to_ui_lut[v] = mu.UI_ids.editor_export
     end
 end
 
@@ -171,7 +187,7 @@ local function create_event_functions()
                         local source_info = debug.getinfo(action_taken, "S")
                         logged_name = "anonymous " .. source_info.source .. ":" .. source_info.linedefined
                     end
-                    log('[ERROR] + ' .. tostring(logged_name) )
+                    log('[ERROR] + ' .. tostring(logged_name))
                 end
                 log(debug.traceback())
             end
@@ -246,6 +262,104 @@ for k, v in pairs(SpecialGames) do
     log("Special game " .. k .. " registered.")
 end
 
+---Initializes the Export UI for exporting a Special Game
+local function export_ui(player_id)
+    local player = game.players[player_id]
+    if player.gui.screen[EditorExport_ElementIDs.global_name] then
+        player.gui.screen[EditorExport_ElementIDs.global_name].destroy()
+    end
+    local export_UI = player.gui.screen.add {
+        type = "frame",
+        name = EditorExport_ElementIDs.global_name,
+        direction = "vertical"
+    }
+    ---@diagnostic disable-next-line: missing-fields
+    mu.style(export_UI, {
+        width = 400,
+        maximal_height = 700,
+        vertically_stretchable = true,
+        natural_height = 0,
+        padding = { 4, 8, 8, 8 },
+    })
+    export_UI.auto_center = true
+
+    -- Header (title + drag handle + close button)
+    do
+        local header = export_UI.add {
+            type = "flow",
+            name = EditorExport_ElementIDs.frame_header,
+            direction = "horizontal"
+        }
+        ---@diagnostic disable-next-line: missing-fields
+        mu.style(header, {
+            vertically_stretchable = false
+        })
+        header.add {
+            type = "label",
+            caption = "Save / Export",
+            style = "frame_title"
+        }
+        local dragger = header.add {
+            type = "empty-widget",
+            style = "draggable_space_header"
+        }
+        ---@diagnostic disable-next-line: missing-fields
+        mu.style(dragger, {
+            right_margin = 4,
+            horizontally_stretchable = true,
+            vertically_stretchable = true,
+            height = 24,
+            natural_height = 24,
+        })
+        dragger.drag_target = export_UI
+        header.add {
+            type = "sprite-button",
+            sprite = "utility/close_white",
+            hovered_sprite = "utility/close_black",
+            clicked_sprite = "utility/close_black",
+            style = "frame_action_button",
+            name = EditorExport_ElementIDs.toplevel_quit_btn
+        }
+    end
+
+    local panes = export_UI.add {
+        type = "flow",
+        name = EditorExport_ElementIDs.panes,
+        direction = "vertical"
+    }
+    ---@diagnostic disable-next-line: missing-fields
+    mu.style(panes, {
+        vertically_stretchable = true,
+        natural_width = 0,
+        vertical_spacing = 21,
+    })
+
+    local output_box = panes.add {
+        type = "text-box",
+        text = "",
+        name = EditorExport_ElementIDs.output
+    }
+    ---@diagnostic disable-next-line: missing-fields
+    mu.style(output_box, {
+        horizontally_stretchable = true,
+        maximal_width = 99999,
+        minimal_height = 150,
+    })
+
+    local save_pane = panes.add {
+        type = "frame",
+        style = "inside_shallow_frame"
+    }
+    ---@diagnostic disable-next-line: missing-fields
+    mu.style(save_pane, {
+        horizontally_stretchable = true,
+        minimal_height = 150,
+    })
+
+    player.opened = export_UI
+    get_player_storage(player_id).open[mu.UI_ids.editor_export] = export_UI
+end
+
 ---Initializes the Special Game UI.
 ---Last-resort fallback for updating the UI. Destroys the UI and recreates it.
 ---@param player_id integer
@@ -254,13 +368,13 @@ local function init_ui(player_id)
     if player.gui.screen[Editor_ElementIDs.global_name] then
         player.gui.screen[Editor_ElementIDs.global_name].destroy()
     end
-    local player_UI = player.gui.screen.add {
+    local editor_UI = player.gui.screen.add {
         type = "frame",
         name = Editor_ElementIDs.global_name,
         direction = "vertical",
     }
     ---@diagnostic disable-next-line: missing-fields
-    mu.style(player_UI, {
+    mu.style(editor_UI, {
         width = 600,
         minimal_height = 800,
         maximal_height = 1000,
@@ -268,11 +382,11 @@ local function init_ui(player_id)
         horizontal_align = "center",
         padding = { 4, 8, 8, 8 }
     })
-    player_UI.auto_center = true
+    editor_UI.auto_center = true
 
     -- Header (title + drag handle + close button)
     do
-        local header = player_UI.add {
+        local header = editor_UI.add {
             type = "flow",
             name = Editor_ElementIDs.frame_header,
             direction = "horizontal"
@@ -298,7 +412,7 @@ local function init_ui(player_id)
             height = 24,
             natural_height = 24,
         })
-        dragger.drag_target = player_UI
+        dragger.drag_target = editor_UI
         header.add {
             type = "sprite-button",
             sprite = "utility/close_white",
@@ -309,7 +423,7 @@ local function init_ui(player_id)
         }
     end
 
-    local toplevel_layout = player_UI.add {
+    local toplevel_layout = editor_UI.add {
         type = "flow",
         name = Editor_ElementIDs.toplevel_layout,
         direction = "vertical"
@@ -510,8 +624,8 @@ local function init_ui(player_id)
             name = Editor_ElementIDs.save_btn,
         }
     end
-    player.opened = player_UI
-    get_player_storage(player_id).open[mu.UI_ids.editor] = player_UI
+    player.opened = editor_UI
+    get_player_storage(player_id).open[mu.UI_ids.editor] = editor_UI
 end
 
 ---/debug-special command handler.
@@ -541,6 +655,31 @@ plugin_data.click.register_early("toggle buttons", function(evt)
     end
 end)
 
+--- Set to true to prevent closing the window.
+local popup_switchover = false
+
+---@param player LuaPlayer
+local function quit_export(player)
+    local player_data = get_player_storage(player.index)
+    local ui_box = player_data.open[mu.UI_ids.editor_export]
+    ---@type LuaGuiElement | nil
+    local focus_after = nil
+    if player_data.open[mu.UI_ids.editor] and player_data.open[mu.UI_ids.editor].valid then
+        log("[Info] Switching focus to " .. tostring(player_data.open[mu.UI_ids.editor] and player_data.open[mu.UI_ids.editor].name))
+        focus_after = player_data.open[mu.UI_ids.editor]
+        player_data.open[mu.UI_ids.editor].focus()
+    end
+    if ui_box then
+        if ui_box.valid then
+            ui_box.destroy()
+        end
+        player_data.open[mu.UI_ids.editor_export] = nil
+    end
+    -- I have no idea why LLS is clowning on this, because assigning `nil` directly works.
+    ---@diagnostic disable-next-line: assign-type-mismatch
+    player.opened = focus_after
+end
+
 ---@param player LuaPlayer
 local function quit_editor(player)
     local player_data = get_player_storage(player.index)
@@ -553,11 +692,23 @@ local function quit_editor(player)
         end
         player_data.open[mu.UI_ids.editor] = nil
     end
+    -- close any popups
+    quit_export(player)
     erase_player_storage(player.index) -- forget the contents of the screen
 end
 
+plugin_data.click.register(Editor_ElementIDs.launch_export_ui, function(evt)
+    popup_switchover = true
+    export_ui(evt.player_index)
+    popup_switchover = false
+end)
+
 plugin_data.click.register(Editor_ElementIDs.toplevel_quit_btn, function(evt)
     quit_editor(game.players[evt.player_index])
+end)
+
+plugin_data.click.register(EditorExport_ElementIDs.toplevel_quit_btn, function(evt)
+    quit_export(game.players[evt.player_index])
 end)
 
 plugin_data.click.register(Editor_ElementIDs.clear_all, function(evt)
@@ -589,10 +740,16 @@ end)
 event.add(defines.events.on_gui_closed, function(evt)
     if not validate_player(evt.player_index) then return end
     local player_data = get_player_storage(evt.player_index)
-    if not player_data.open[mu.UI_ids.editor] then return end
+    local player = game.players[evt.player_index]
+    log("Screen closed " .. evt.element.name .. " -> " .. tostring(player.opened and player.opened.name))
+    if not evt.element then return end
 
     if evt.element == player_data.open[mu.UI_ids.editor] then
-        quit_editor(game.players[evt.player_index])
+        if not popup_switchover then
+            quit_editor(player)
+        end
+    elseif evt.element == player_data.open[mu.UI_ids.editor_export] then
+        quit_export(player)
     end
 end)
 
