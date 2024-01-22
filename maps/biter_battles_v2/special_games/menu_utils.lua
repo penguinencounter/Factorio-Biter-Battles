@@ -47,35 +47,87 @@ function export.find(parent, name)
     return nil
 end
 
----Add an options panel.
+---Add an options panel and bar.
 ---@param parent LuaGuiElement
----@param id string
----@return LuaGuiElement
-function export.mk_options(parent, id)
+---@param prefixer (fun(name: string): string) | string
+---@return LuaGuiElement container, LuaGuiElement options, LuaGuiElement panel
+function export.mk_options(parent, prefixer)
+    if type(prefixer) == "string" then
+        prefixer = export.mk_prefix(prefixer)
+    end
     local options = parent.add {
         type = "frame",
         style = "deep_frame_in_shallow_frame",
         direction = "vertical",
-        name = export.mk_prefix(id)("options"),
+        name = prefixer("options"),
     }
     ---@diagnostic disable-next-line: missing-fields
     export.style(options, {
         horizontally_stretchable = true,
         natural_height = 0,
-        padding = 4,
         margin = 0
     })
-    return options
+    local stack = options.add {
+        type = "flow",
+        direction = "vertical",
+        name = prefixer("stack")
+    }
+    ---@diagnostic disable-next-line: missing-fields
+    export.style(stack, {
+        vertical_spacing = 0,
+    })
+    local actionbar = stack.add {
+        type = "frame",
+        direction = "horizontal",
+        style = "subheader_frame",
+        name = prefixer("actionbar")
+    }
+    ---@diagnostic disable-next-line: missing-fields
+    export.style(actionbar, {
+        horizontally_stretchable = true,
+    })
+
+    local option_frame = stack.add {
+        type = "flow",
+        direction = "vertical",
+        name = prefixer("options_frame")
+    }
+    ---@diagnostic disable-next-line: missing-fields
+    export.style(option_frame, {
+        horizontally_stretchable = true,
+        padding = 4,
+    })
+    return options, option_frame, actionbar
 end
 
 ---Destroy an options panel.
 ---@param parent LuaGuiElement
----@param id string
-function export.rm_options(parent, id)
-    local options = export.find(parent, export.mk_prefix(id)("options"))
+---@param prefixer (fun(name: string): string) | string
+function export.rm_options(parent, prefixer)
+    if type(prefixer) == "string" then
+        prefixer = export.mk_prefix(prefixer)
+    end
+    local options = export.find(parent, prefixer("options"))
     if options then
         options.destroy()
     end
+end
+
+---Get the options panel, bar, and container.
+---@param parent LuaGuiElement
+---@param prefixer fun(name: string): string
+---@return LuaGuiElement? container, LuaGuiElement? options, LuaGuiElement? panel
+function export.get_options(parent, prefixer)
+    local container = parent[prefixer("options")]
+    if not container then return nil, nil, nil end
+
+    local stack = container[prefixer("stack")]
+    if not stack then return nil, nil, nil end
+
+    local actionbar = stack[prefixer("actionbar")]
+    local options_frame = stack[prefixer("options_frame")]
+
+    return container, options_frame, actionbar
 end
 
 return export

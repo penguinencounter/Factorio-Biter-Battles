@@ -9,7 +9,7 @@ return function(plugs)
 
         end,
         enable = function(self, player_idx, list_itm)
-            local options = mu.mk_options(list_itm, self.id)
+            local container, options = mu.mk_options(list_itm, self.id)
             options.add {
                 type = "label",
                 caption = "Send to other server options placeholder",

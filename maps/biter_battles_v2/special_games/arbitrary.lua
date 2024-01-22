@@ -1,49 +1,34 @@
+-- "Custom Lua" special game (?)
+
 local mu = require "maps.biter_battles_v2.special_games.menu_utils"
 
----@class special.disabled_throws.Data : special.ModuleData
----@field packs {automation: boolean, logistic: boolean, military: boolean, chemical: boolean, production: boolean, utility: boolean, space: boolean}
+local pfx = mu.mk_prefix("special_editor_arbitrary")
+
+---@class special.arbitrary.Data : special.ModuleData
+---@field code string
 
 ---@class special.EditorConf
----@field disabled_throws special.disabled_throws.Data
-
-local pfx = mu.mk_prefix("special_editor_disabled_throws")
-local pack_order = {
-    "automation",
-    "logistic",
-    "military",
-    "chemical",
-    "production",
-    "utility",
-    "space",
-}
+---@field arbitrary special.arbitrary.Data
 
 ---Reset per-player UI state.
 ---@param data_store special.EditorConf
 local function clear_data(data_store)
-    data_store.disabled_throws = {
+    data_store.arbitrary = {
         enabled = false,
-        packs = {
-            automation = false,
-            logistic = false,
-            military = false,
-            chemical = false,
-            production = false,
-            utility = false,
-            space = false,
-        }
+        code = ""
     }
 end
 
 local function ensure_data(data_store)
-    if not data_store.disabled_throws then clear_data(data_store) end
+    if not data_store.arbitrary then clear_data(data_store) end
 end
 
 ---@type special.SpecialGamePlugin
-local function plugin(plugs)
+local plugin = function(plugs)
     ---@type special.SpecialGameSpec
     return {
-        id = "disabled_throws",
-        name = "Disable sciences",
+        id = "arbitrary",
+        name = "Custom Lua",
         const_init = function()
 
         end,
@@ -52,12 +37,6 @@ local function plugin(plugs)
             if old_container then old_container.destroy() end
 
             local container, options, actionbar = mu.mk_options(list_itm, pfx)
-            mu.style(actionbar.add {
-                type = "label",
-                caption = "Select the sciences you want to disable."
-            }, { ---@diagnostic disable-line: missing-fields
-                left_margin = 4
-            })
             mu.spacer(actionbar.add { type = "empty-widget" })
             local clear_button = actionbar.add {
                 type = "sprite-button",
@@ -66,35 +45,31 @@ local function plugin(plugs)
                 style = "tool_button",
                 name = pfx("reset")
             }
-            
+            local textfield = options.add {
+                type = "text-box",
+                text = "",
+                name = pfx("code")
+            }
+            ---@diagnostic disable-next-line: missing-fields
+            mu.style(textfield, {
+                horizontally_stretchable = true,
+                vertically_stretchable = true,
+                natural_height = 0,
+                minimal_height = 400,
+                maximal_width = 9999999,
+            })
+
             plugs.register_element(clear_button, mu.UI_ids.editor)
-            plugs.click.register(clear_button.name, function (evt)
+            -- this will overwrite the previous handler, if there is one
+            plugs.click.register(clear_button.name, function()
                 self:clear_data(player_idx, list_itm)
             end, pfx("reset"))
-
-            local flow = options.add {
-                type = "flow",
-                direction = "horizontal",
-                name = pfx("flow")
-            }
-
-            for _, v in ipairs(pack_order) do
-                local toggle = flow.add {
-                    type = "sprite-button",
-                    sprite = "item/" .. v .. "-science-pack",
-                    tooltip = { "item-name." .. v .. "-science-pack" },
-                    state = false,
-                    auto_toggle = true,
-                    name = pfx(v)
-                }
-                plugs.register_element(toggle, mu.UI_ids.editor)
-            end
             container.visible = false
         end,
         enable = function(self, player_idx, list_itm)
             local ec = plugs.get_player_storage(player_idx).editor_conf
             ensure_data(ec)
-            ec.disabled_throws.enabled = true
+            ec.arbitrary.enabled = true
 
             local container = mu.get_options(list_itm, pfx)
             if not container then
@@ -109,7 +84,7 @@ local function plugin(plugs)
         disable = function(self, player_idx, list_itm)
             local ec = plugs.get_player_storage(player_idx).editor_conf
             ensure_data(ec)
-            ec.disabled_throws.enabled = false
+            ec.arbitrary.enabled = false
 
             local container = mu.get_options(list_itm, pfx)
             if not container then return end
@@ -118,15 +93,15 @@ local function plugin(plugs)
         clear_data = function(self, player_idx, list_itm)
             local ec = plugs.get_player_storage(player_idx).editor_conf
             ensure_data(ec)
-            local was_enabled = ec.disabled_throws.enabled
+            local was_enabled = ec.arbitrary.enabled
             clear_data(ec)
-            ec.disabled_throws.enabled = was_enabled
+            ec.arbitrary.enabled = was_enabled
             self:refresh_ui(player_idx, list_itm)
         end,
         refresh_ui = function(self, player_idx, list_itm)
             local ec = plugs.get_player_storage(player_idx).editor_conf
             ensure_data(ec)
-            local data = ec.disabled_throws
+            local data = ec.arbitrary
 
             if data.enabled then
                 self:enable(player_idx, list_itm)
@@ -136,15 +111,11 @@ local function plugin(plugs)
 
             local container, options, actionbar = mu.get_options(list_itm, pfx)
             if not options then return end
-            local button_set = options[pfx("flow")]
-            if not button_set then return end
-
-            for _, name in ipairs(pack_order) do
-                local actual_state = data.packs[name]
-                local toggle = button_set[pfx(name)]
-                toggle.toggled = actual_state
-            end
+            local textfield = options[pfx("code")]
+            if not textfield then return end
+            textfield.text = data.code
         end
     }
 end
+
 return plugin
