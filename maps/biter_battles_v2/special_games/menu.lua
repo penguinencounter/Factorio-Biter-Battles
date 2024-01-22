@@ -2,6 +2,21 @@ local event = require "utils.event"
 local mu = require "maps.biter_battles_v2.special_games.menu_utils"
 -- Special game toolbox.
 
+-- List of special games to load.
+-- These names are passed to require(), but the contained modules can have a different ID without consequence.
+local SOURCES = {
+    "turtle",
+    "infinity_chest",
+    "disabled_research",
+    "disabled_entities",
+    "disable_sciences",
+    "shared_science_throw",
+    "limited_lives",
+    "send_to_external_server",
+    "captain",
+    "arbitrary",
+}
+
 --- extend this class in your plugin files
 ---@class special.ModuleData
 ---@field enabled boolean
@@ -26,13 +41,15 @@ local function init()
     this = global.special_game_toolbox
 end
 
----@type special.PlayerData
-local default = {
-    player_index = 0,
-    open = {},
-    editor_conf = {
-    },
-}
+---@return special.PlayerData
+local function get_default()
+    return {
+        player_index = 0,
+        open = {},
+        editor_conf = {
+        },
+    }
+end
 
 ---Get per-player storage.
 ---@param player_idx integer
@@ -41,7 +58,7 @@ local function get_player_storage(player_idx)
     if this.players[player_idx] then
         return this.players[player_idx]
     else
-        this.players[player_idx] = default
+        this.players[player_idx] = get_default()
         this.players[player_idx].player_index = player_idx
         return this.players[player_idx]
     end
@@ -111,45 +128,30 @@ end
 ---@generic T
 ---@alias special.Handler<T> { [string] : { [string | fun(e: T)]: fun(e: T) } }
 
---- Always run on every click event that we recognize.
---- Use for dynamic UI elements.
----@type special.EarlyHandler<EventData.on_gui_click>
-local early_click_handlers = {}
-
----@type special.Handler<EventData.on_gui_click>
-local click_handlers = {}
-
----@type special.EarlyHandler<EventData.on_gui_click>
-local early_change_handlers = {}
-
----@type special.Handler<EventData.on_gui_elem_changed>
-local change_handlers = {}
-
----@class special.EventRegisterFuncs 
+---@class special.EventRegisterFuncs
 ---@field register_early fun(name: string, cbck: (fun(evt: table): boolean | nil))
 ---@field unregister_early fun(name: string)
 ---@field register fun(target: string, cbck: fun(evt: table), name?: string)
 ---@field unregister fun(target: string, name: string | fun(evt: table))
----@field fire fun(data: table, target_name: string) }
+---@field fire fun(data: table, target_name: string)
 
----@generic T
----@param early special.EarlyHandler<T>
----@param normal special.Handler<T>
 ---@return special.EventRegisterFuncs
-local function create_event_functions(early, normal)
+local function create_event_functions()
+    local early = {}
+    local normal = {}
     ---@type special.EventRegisterFuncs
     return {
-        register_early = function (name, cbck)
+        register_early = function(name, cbck)
             early[name] = cbck
         end,
-        unregister_early = function (name)
+        unregister_early = function(name)
             early[name] = nil
         end,
-        register = function (target, cbck, name)
+        register = function(target, cbck, name)
             normal[target] = normal[target] or {}
             normal[target][name or cbck] = cbck
         end,
-        unregister = function (target, name)
+        unregister = function(target, name)
             if not normal[target] then return end
             if not name then
                 normal[target] = {}
@@ -159,15 +161,32 @@ local function create_event_functions(early, normal)
         end,
 
         fire = function(data, target_name)
-            for _, v in pairs(early) do
-                if v(data) then
-                    return
+            local db_actioned = {}
+            local hdlr = function(e)
+                log('[ERROR] in a UI event handler: ' .. e)
+                log('[ERROR] the following handlers were run:')
+                for _, action_taken in ipairs(db_actioned) do
+                    local logged_name = action_taken
+                    if type(action_taken) == "function" then
+                        local source_info = debug.getinfo(action_taken, "S")
+                        logged_name = "anonymous " .. source_info.source .. ":" .. source_info.linedefined
+                    end
+                    log('[ERROR] + ' .. tostring(logged_name) )
                 end
+                log(debug.traceback())
+            end
+            for k, v in pairs(early) do
+                table.insert(db_actioned, k)
+                local ok, val = xpcall(v, hdlr, data)
+                if not ok then error(val) end
+                if val then return end
             end
             local cbcks = normal[target_name]
             if not cbcks then return end
-            for _, v in pairs(cbcks) do
-                v(data)
+            for k, v in pairs(cbcks) do
+                table.insert(db_actioned, k)
+                local ok, er = xpcall(v, hdlr, data)
+                if not ok then error(er) end
             end
         end,
     }
@@ -180,16 +199,25 @@ local plugin_data = {
     validate_player = validate_player,
     register_element = register_element,
 
-    click = create_event_functions(early_click_handlers, click_handlers),
-    change = create_event_functions(early_change_handlers, change_handlers),
+    click = create_event_functions(),
+    change = create_event_functions(),
 }
 
 ---@class special.SpecialGameSpec
 ---@field id string
 ---@field name string
+---Called during the module registration phase.
 ---@field const_init fun()
+---Called when the UI needs to be (re)created.
+---@field construct fun(self: special.SpecialGameSpec, player_idx: integer, list_itm: LuaGuiElement)
+---Called when the module is enabled.
 ---@field enable fun(self: special.SpecialGameSpec, player_idx: integer, list_itm: LuaGuiElement)
+---Called when the module is disabled.
 ---@field disable fun(self: special.SpecialGameSpec, player_idx: integer, list_itm: LuaGuiElement)
+---Called when the module is cleared.
+---@field clear_data fun(self: special.SpecialGameSpec, player_idx: integer, list_itm: LuaGuiElement)
+---Centralized "refresh info" function. Load data from storage and update the UI.
+---@field refresh_ui fun(self: special.SpecialGameSpec, player_idx: integer, list_itm: LuaGuiElement)
 
 ---@alias special.SpecialGamePlugin fun(plug: special.SpecialGamePluginData): special.SpecialGameSpec
 
@@ -211,23 +239,9 @@ local function add_sources(arr)
     end
 end
 
-add_sources {
-    "turtle",
-    "infinity_chest",
-    "disabled_research",
-    "disabled_entities",
-    "disable_sciences",
-    "shared_science_throw",
-    "limited_lives",
-    "send_to_external_server",
-    "captain",
-}
+add_sources(SOURCES)
 
 for k, v in pairs(SpecialGames) do
-    if k ~= v.id then
-        error("Special game " ..
-            k .. " has a mismatched ID. Fix registration info in special.lua and reload.")
-    end
     v.const_init()
     log("Special game " .. k .. " registered.")
 end
@@ -397,7 +411,7 @@ local function init_ui(player_id)
         header.add {
             type = "sprite-button",
             sprite = "utility/trash",
-            style = "tool_button",
+            style = "tool_button_red",
             tooltip = "Clear all settings",
             name = Editor_ElementIDs.clear_all,
         }
@@ -455,6 +469,14 @@ local function init_ui(player_id)
             margin = 0,
             height = 36,
         })
+
+        -- Tell module to get set up
+        if v.construct then -- TODO: make this mandatory!!!
+            v:construct(player_id, ui_box)
+        end
+        if v.clear_data then
+            v:clear_data(player_id, ui_box)
+        end
     end
 
     -- Bottom action buttons
@@ -499,6 +521,7 @@ local function cmd_launch_ui(cmd_data)
 end
 
 plugin_data.click.register_early("toggle buttons", function(evt)
+    if not (evt.element and evt.element.valid) then return end
     if evt.element.name:match("^" .. listbox_prefixer("")) then
         local module_name = evt.element.name:match("^" .. listbox_prefixer("(.-)_toggle$"))
         if not module_name then return end
@@ -524,8 +547,13 @@ local function quit_editor(player)
     if player.opened == player_data.open[mu.UI_ids.editor] then
         player.opened = nil
     end
-    player_data.open[mu.UI_ids.editor].destroy()
-    player_data.open[mu.UI_ids.editor] = nil
+    if player_data.open[mu.UI_ids.editor] then
+        if player_data.open[mu.UI_ids.editor].valid then
+            player_data.open[mu.UI_ids.editor].destroy()
+        end
+        player_data.open[mu.UI_ids.editor] = nil
+    end
+    erase_player_storage(player.index) -- forget the contents of the screen
 end
 
 plugin_data.click.register(Editor_ElementIDs.toplevel_quit_btn, function(evt)
@@ -551,6 +579,9 @@ plugin_data.click.register(Editor_ElementIDs.clear_all, function(evt)
             togglebtn.toggled = false
         end
         v:disable(evt.player_index, container)
+        if v.clear_data then
+            v:clear_data(evt.player_index, container)
+        end
     end
 end)
 
@@ -587,12 +618,14 @@ end
 
 ---@param e EventData.on_gui_click
 event.add(defines.events.on_gui_click, function(e)
+    if not (e.element and e.element.valid) then return end
     if not check_gui_interaction(e.element.name, e.player_index) then return end
     plugin_data.click.fire(e, e.element.name)
 end)
 
 ---@param e EventData.on_gui_elem_changed
 event.add(defines.events.on_gui_elem_changed, function(e)
+    if not (e.element and e.element.valid) then return end
     if not check_gui_interaction(e.element.name, e.player_index) then return end
     plugin_data.change.fire(e, e.element.name)
 end)
