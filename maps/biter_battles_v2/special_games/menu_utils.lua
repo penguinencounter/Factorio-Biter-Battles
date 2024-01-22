@@ -3,6 +3,7 @@ local export = {}
 ---@enum special.UI_ids
 export.UI_ids = {
     editor = "special_editor",
+    editor_export = "special_editor_export",
 }
 
 ---@param prefix string
