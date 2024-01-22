@@ -188,7 +188,6 @@ local plugin = function(plugs)
         end,
         refresh_ui = function(self, player_idx, list_itm)
             local ec = plugs.get_player_storage(player_idx).editor_conf
-            log({'', '[Info] Refresh UI: ', serpent.block(ec)})
             ensure_data(ec)
             local data = ec.disabled_research
 
