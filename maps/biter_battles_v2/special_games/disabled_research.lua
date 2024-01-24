@@ -95,7 +95,7 @@ local plugin = function(plugs)
         id = "disabled_research",
         name = "Disable research",
         const_init = function()
-            plugs.change.register_early("disabled_research", on_changed)
+            plugs.picker_changed.register_early("disabled_research", on_changed)
         end,
         construct = function(self, player_idx, list_itm)
             local old_container = mu.get_options(list_itm, prefixer)
