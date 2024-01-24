@@ -216,7 +216,8 @@ local plugin_data = {
     register_element = register_element,
 
     click = create_event_functions(),
-    change = create_event_functions(),
+    picker_changed = create_event_functions(),
+    text_changed = create_event_functions(),
 }
 
 ---@class special.SpecialGameSpec
@@ -784,7 +785,7 @@ end)
 event.add(defines.events.on_gui_elem_changed, function(e)
     if not (e.element and e.element.valid) then return end
     if not check_gui_interaction(e.element.name, e.player_index) then return end
-    plugin_data.change.fire(e, e.element.name)
+    plugin_data.picker_changed.fire(e, e.element.name)
 end)
 
 event.on_init(init)
