@@ -32,13 +32,19 @@ local SOURCES = {
 
 ---@class special.this
 ---@field players table<integer, special.PlayerData>
-local this
+local this = setmetatable({}, {
+    __index = function (t, k)
+        return global.special_game_toolbox[k]
+    end,
+    __newindex = function (t, k, v)
+        global.special_game_toolbox[k] = v
+    end
+})
 
 local function init()
     global.special_game_toolbox = {
         players = {},
     }
-    this = global.special_game_toolbox
 end
 
 ---@return special.PlayerData
@@ -100,8 +106,7 @@ do
         toplevel_quit_btn = prefix("top_quit"),
         toplevel_layout = prefix("top_layout"),
         main_content = prefix("main_content"),
-        save_btn = prefix("save_btn"),
-        save_queue_btn = prefix("save_queue_btn"),
+        continue_to_text_editor = prefix("continue_to_text_editor"),
         preset_name = prefix("preset_name"),
         preset_name_edit = prefix("preset_name_edit"),
 
@@ -215,9 +220,14 @@ local plugin_data = {
     validate_player = validate_player,
     register_element = register_element,
 
-    click = create_event_functions(),
+    button_clicked = create_event_functions(),
     picker_changed = create_event_functions(),
     text_changed = create_event_functions(),
+    text_confirmed = create_event_functions(),
+    slider_changed = create_event_functions(),
+    checkbox_changed = create_event_functions(),
+    switch_changed = create_event_functions(),
+    listbox_changed = create_event_functions(),
 }
 
 ---@class special.SpecialGameSpec
@@ -231,7 +241,7 @@ local plugin_data = {
 ---@field enable fun(self: special.SpecialGameSpec, player_idx: integer, list_itm: LuaGuiElement)
 ---Called when the module is disabled.
 ---@field disable fun(self: special.SpecialGameSpec, player_idx: integer, list_itm: LuaGuiElement)
----Called when the module is cleared.
+---Called when the module is cleared. Usually by the red Trash button at the top, but could also be called by the module itself.
 ---@field clear_data fun(self: special.SpecialGameSpec, player_idx: integer, list_itm: LuaGuiElement)
 ---Centralized "refresh info" function. Load data from storage and update the UI.
 ---@field refresh_ui fun(self: special.SpecialGameSpec, player_idx: integer, list_itm: LuaGuiElement)
@@ -614,15 +624,9 @@ local function init_ui(player_id)
         })
         dialog_buttons.add {
             type = "button",
-            caption = "Queue",
+            caption = "Next",
             style = "confirm_button",
-            name = Editor_ElementIDs.save_queue_btn,
-        }
-        dialog_buttons.add {
-            type = "button",
-            caption = "Start",
-            style = "confirm_button",
-            name = Editor_ElementIDs.save_btn,
+            name = Editor_ElementIDs.continue_to_text_editor,
         }
     end
     player.opened = editor_UI
@@ -635,7 +639,7 @@ local function cmd_launch_ui(cmd_data)
     init_ui(cmd_data.player_index)
 end
 
-plugin_data.click.register_early("toggle buttons", function(evt)
+plugin_data.button_clicked.register_early("toggle buttons", function(evt)
     if not (evt.element and evt.element.valid) then return end
     if evt.element.name:match("^" .. listbox_prefixer("")) then
         local module_name = evt.element.name:match("^" .. listbox_prefixer("(.-)_toggle$"))
@@ -698,21 +702,21 @@ local function quit_editor(player)
     erase_player_storage(player.index) -- forget the contents of the screen
 end
 
-plugin_data.click.register(Editor_ElementIDs.launch_export_ui, function(evt)
+plugin_data.button_clicked.register(Editor_ElementIDs.launch_export_ui, function(evt)
     popup_switchover = true
     export_ui(evt.player_index)
     popup_switchover = false
 end)
 
-plugin_data.click.register(Editor_ElementIDs.toplevel_quit_btn, function(evt)
+plugin_data.button_clicked.register(Editor_ElementIDs.toplevel_quit_btn, function(evt)
     quit_editor(game.players[evt.player_index])
 end)
 
-plugin_data.click.register(EditorExport_ElementIDs.toplevel_quit_btn, function(evt)
+plugin_data.button_clicked.register(EditorExport_ElementIDs.toplevel_quit_btn, function(evt)
     quit_export(game.players[evt.player_index])
 end)
 
-plugin_data.click.register(Editor_ElementIDs.clear_all, function(evt)
+plugin_data.button_clicked.register(Editor_ElementIDs.clear_all, function(evt)
     local player_data = get_player_storage(evt.player_index)
     for _, v in pairs(SpecialGames) do
         -- Try to find the toggle button for this module.
@@ -778,7 +782,7 @@ end
 event.add(defines.events.on_gui_click, function(e)
     if not (e.element and e.element.valid) then return end
     if not check_gui_interaction(e.element.name, e.player_index) then return end
-    plugin_data.click.fire(e, e.element.name)
+    plugin_data.button_clicked.fire(e, e.element.name)
 end)
 
 ---@param e EventData.on_gui_elem_changed

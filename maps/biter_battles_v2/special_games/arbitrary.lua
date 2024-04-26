@@ -61,7 +61,7 @@ local plugin = function(plugs)
 
             plugs.register_element(clear_button, mu.UI_ids.editor)
             -- this will overwrite the previous handler, if there is one
-            plugs.click.register(clear_button.name, function()
+            plugs.button_clicked.register(clear_button.name, function()
                 self:clear_data(player_idx, list_itm)
             end, pfx("reset"))
             container.visible = false
