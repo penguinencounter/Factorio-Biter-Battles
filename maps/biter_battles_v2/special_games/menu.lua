@@ -32,6 +32,7 @@ local SOURCES = {
 
 ---@class special.this
 ---@field players table<integer, special.PlayerData>
+---@field ui_bindings table<string, special.UI_ids>
 local this = setmetatable({}, {
     __index = function (t, k)
         return global.special_game_toolbox[k]
@@ -41,9 +42,21 @@ local this = setmetatable({}, {
     end
 })
 
+---@type table<integer, fun(...): ...>
+local callback_alias = {}
+
+---@param func fun(...): ...
+---@return integer
+local function const_register_callable(func)
+    local idx = #callback_alias + 1
+    callback_alias[idx] = func
+    return idx
+end
+
 local function init()
     global.special_game_toolbox = {
         players = {},
+        ui_bindings = {},
     }
 end
 
@@ -156,6 +169,9 @@ end
 ---@field unregister fun(target: string, name: string | fun(evt: table))
 ---@field fire fun(data: table, target_name: string)
 
+-- FIXME: This will not work in multiplayer. 
+--        People will be stepping on each others' toes (event handlers) all over the place.
+--        Will also almost certainly desync, because plugin_data is not const.
 ---@return special.EventRegisterFuncs
 local function create_event_functions()
     local early = {}
@@ -228,6 +244,22 @@ local plugin_data = {
     checkbox_changed = create_event_functions(),
     switch_changed = create_event_functions(),
     listbox_changed = create_event_functions(),
+}
+
+---Declare that an element is associated with a UI.
+---@param element any
+---@param ui_id any
+local function register_element_v2(element, ui_id)
+    this.ui_bindings = this.ui_bindings
+    this.ui_bindings[element.name] = ui_id
+end
+
+local pluginAPIV2 = {
+    get_player_storage = get_player_storage,
+    erase_player_storage = erase_player_storage,
+    validate_player = validate_player,
+    register_element = register_element_v2,
+    const_register_callable = const_register_callable,
 }
 
 ---@class special.SpecialGameSpec
@@ -661,6 +693,7 @@ plugin_data.button_clicked.register_early("toggle buttons", function(evt)
 end)
 
 --- Set to true to prevent closing the window.
+--- FIXME: desyncs!!!!
 local popup_switchover = false
 
 ---@param player LuaPlayer

@@ -48,10 +48,7 @@ local function plugin(plugs)
 
         end,
         construct = function(self, player_idx, list_itm)
-            local old_container = mu.get_options(list_itm, pfx)
-            if old_container then old_container.destroy() end
-
-            local container, options, actionbar = mu.mk_options(list_itm, pfx)
+            local container, options, actionbar = mu.recreate_options(list_itm, pfx)
             mu.style(actionbar.add {
                 type = "label",
                 caption = "Select the sciences you want to disable."
@@ -66,9 +63,9 @@ local function plugin(plugs)
                 style = "tool_button",
                 name = pfx("reset")
             }
-            
+
             plugs.register_element(clear_button, mu.UI_ids.editor)
-            plugs.button_clicked.register(clear_button.name, function (evt)
+            plugs.button_clicked.register(clear_button.name, function(evt)
                 self:clear_data(player_idx, list_itm)
             end, pfx("reset"))
 
