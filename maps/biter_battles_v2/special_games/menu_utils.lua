@@ -131,4 +131,15 @@ function export.get_options(parent, prefixer)
     return container, options_frame, actionbar
 end
 
+--- Destroy the options panel and create a new one.
+---@param parent LuaGuiElement
+---@param prefixer fun(name: string): string
+---@return LuaGuiElement container, LuaGuiElement options, LuaGuiElement panel
+function export.recreate_options(parent, prefixer)
+    local container = export.get_options(parent, prefixer)
+    if container then container.destroy() end
+    return export.mk_options(parent, prefixer)
+end
+
+
 return export
