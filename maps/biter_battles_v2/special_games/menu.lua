@@ -33,6 +33,7 @@ local SOURCES = {
 ---@class special.this
 ---@field players table<integer, special.PlayerData>
 ---@field ui_bindings table<string, special.UI_ids>
+---@field event_handlers { [string]: { early: { [string]: integer }, standard: { [string]: integer[] } } }
 local this = setmetatable({}, {
     __index = function (t, k)
         return global.special_game_toolbox[k]
@@ -42,12 +43,25 @@ local this = setmetatable({}, {
     end
 })
 
+-- Set to true at the end of the file, before any of the game events have run.
+-- Setting to true exits the 'constant init phase'.
+local desync_guard = false
+
 ---@type table<integer, fun(...): ...>
 local callback_alias = {}
+
+---@param key integer
+---@return fun(...): ...
+local function get_alias(key)
+    local ref = callback_alias[key]
+    if ref == nil then error("Broken reference to " .. key) end
+    return ref
+end
 
 ---@param func fun(...): ...
 ---@return integer
 local function const_register_callable(func)
+    if desync_guard then error("Can't register a new callable outside the const init phase.") end
     local idx = #callback_alias + 1
     callback_alias[idx] = func
     return idx
@@ -57,6 +71,7 @@ local function init()
     global.special_game_toolbox = {
         players = {},
         ui_bindings = {},
+        event_handlers = {}
     }
 end
 
@@ -254,12 +269,139 @@ local function register_element_v2(element, ui_id)
     this.ui_bindings[element.name] = ui_id
 end
 
+---@class special.EventRegisterFuncs2
+---@field const_register_early fun(name: string, callback: integer | fun(evt: table): boolean | nil)
+---@field register_early_global fun(name: string, callback_id: integer)
+---@field const_register fun(target: string, callback: (integer | fun(evt: table)), name: string)
+---@field register_global fun(target: string, callback_id: integer, name: string)
+---@field emit fun(name: string, player: integer, event_data: table)
+
+---@param event_id string Event id. Used to manage storage.
+---@return special.EventRegisterFuncs2
+local function create_event(event_id)
+    ---@type { [string]: fun(evt: table): boolean | nil}
+    local const_early = {}
+    ---@type { [string]: { [string | fun(evt: table)]: fun(evt: table) } }
+    local const_standard = {}
+
+    this.event_handlers[event_id] = {
+        early = {},
+        standard = {}
+    }
+
+    local runtime_early = setmetatable({}, {
+        __index = function (t, k)
+            return this.event_handlers[event_id].early[k]
+        end,
+        __newindex = function (t, k, v)
+            this.event_handlers[event_id].early[k] = v
+        end
+    })
+
+    local runtime_standard = setmetatable({}, {
+        __index = function (t, k)
+            return this.event_handlers[event_id].standard[k]
+        end,
+        __newindex = function (t, k, v)
+            this.event_handlers[event_id].standard[k] = v
+        end
+    })
+
+    ---@type special.EventRegisterFuncs2
+    return {
+        const_register_early = function(name, callback)
+            if desync_guard then error("Cannot create const event registrations outside of const init phase.", 2) end
+            -- this function accepts function pointers, not callback IDs.
+            ---@type fun(evt: table): boolean | nil
+            local resolved_callback
+            if type(callback) == "number" then
+                resolved_callback = get_alias(callback)
+            else
+                ---@cast callback -integer
+                resolved_callback = callback
+            end
+            const_early[name] = resolved_callback
+        end,
+        register_early_global = function (name, callback_id)
+            runtime_early[name] = callback_id
+        end,
+        const_register = function (target, callback, name)
+            if desync_guard then error("Cannot create const event registrations outside of const init phase.", 2) end
+            ---@type fun(evt: table)
+            local resolved_callback
+            if type(callback) == "number" then
+                resolved_callback = get_alias(callback)
+            else
+                ---@cast callback -integer
+                resolved_callback = callback
+            end
+            const_standard[target] = const_standard[target] or {}
+            const_standard[target][name or resolved_callback] = resolved_callback
+        end,
+        register_global = function(target, callback_id, name)
+            runtime_standard[target] = runtime_standard[target] or {}
+            runtime_standard[target][name or callback_id] = callback_id
+        end,
+
+        emit = function (target_name, player, event_data)
+            local actioned = {}
+            local function error_handler(e)
+                log('[ERROR] In UI event handler: ' .. e)
+                log('[ERROR] These handlers were run:')
+                for _, action in ipairs(actioned) do
+                    local log_name = action
+                    if type(action) == "function" then
+                        local info = debug.getinfo(action, "S")
+                        log_name = "anonymous " .. info.source .. ":" .. info.linedefined
+                    end
+                    log('[ERROR] - ' .. tostring(log_name))
+                end
+                log(debug.traceback())
+            end
+
+            for name, callable in pairs(const_early) do
+                actioned[#actioned+1] = name
+                local ok, val = xpcall(callable, error_handler, event_data)
+                if not ok then error(val) end
+                if val then return end
+            end
+            -- can't use runtime_early because it's a half-baked proxy, so a pairs() doesn't work
+            for name, callable_ref in pairs(this.event_handlers[event_id].early) do
+                actioned[#actioned+1] = name
+                local callable = get_alias(callable_ref)
+                local ok, val = xpcall(callable, error_handler, event_data)
+                if not ok then error(val) end
+            end
+
+            local const_callbacks = const_standard[target_name]
+            if const_callbacks then
+                for name, callable in pairs(const_callbacks) do
+                    actioned[#actioned+1] = name
+                    local ok, err = xpcall(callable, error_handler, event_data)
+                    if not ok then error(err) end
+                end
+            end
+            local runtime_callbacks = runtime_standard[target_name]
+            if runtime_callbacks then
+                for name, callable_ref in pairs(runtime_callbacks) do
+                    actioned[#actioned+1] = name
+                    local callable = get_alias(callable_ref)
+                    local ok, err = xpcall(callable, error_handler, event_data)
+                    if not ok then error(err) end
+                end
+            end
+        end
+    }
+end
+
 local pluginAPIV2 = {
     get_player_storage = get_player_storage,
     erase_player_storage = erase_player_storage,
     validate_player = validate_player,
     register_element = register_element_v2,
     const_register_callable = const_register_callable,
+
+    button_clicked = create_event("button_clicked"),
 }
 
 ---@class special.SpecialGameSpec
@@ -296,13 +438,6 @@ local function add_sources(arr)
     for _, name in ipairs(arr) do
         add_source(name)
     end
-end
-
-add_sources(SOURCES)
-
-for k, v in pairs(SpecialGames) do
-    v.const_init()
-    log("Special game " .. k .. " registered.")
 end
 
 ---Initializes the Export UI for exporting a Special Game
@@ -671,26 +806,6 @@ local function cmd_launch_ui(cmd_data)
     init_ui(cmd_data.player_index)
 end
 
-plugin_data.button_clicked.register_early("toggle buttons", function(evt)
-    if not (evt.element and evt.element.valid) then return end
-    if evt.element.name:match("^" .. listbox_prefixer("")) then
-        local module_name = evt.element.name:match("^" .. listbox_prefixer("(.-)_toggle$"))
-        if not module_name then return end
-
-        -- take the module and enable / disable it
-        local module = SpecialGames[module_name]
-        if not module then
-            log("Error enabling module " .. module_name .. ": module not found.")
-        end
-
-        if evt.element.toggled then
-            module:enable(evt.player_index, evt.element.parent)
-        else
-            module:disable(evt.player_index, evt.element.parent)
-        end
-        return true
-    end
-end)
 
 --- Set to true to prevent closing the window.
 --- FIXME: desyncs!!!!
@@ -734,6 +849,35 @@ local function quit_editor(player)
     quit_export(player)
     erase_player_storage(player.index) -- forget the contents of the screen
 end
+
+
+add_sources(SOURCES)
+
+for k, v in pairs(SpecialGames) do
+    v.const_init()
+    log("Special game " .. k .. " registered.")
+end
+
+plugin_data.button_clicked.register_early("toggle buttons", function(evt)
+    if not (evt.element and evt.element.valid) then return end
+    if evt.element.name:match("^" .. listbox_prefixer("")) then
+        local module_name = evt.element.name:match("^" .. listbox_prefixer("(.-)_toggle$"))
+        if not module_name then return end
+
+        -- take the module and enable / disable it
+        local module = SpecialGames[module_name]
+        if not module then
+            log("Error enabling module " .. module_name .. ": module not found.")
+        end
+
+        if evt.element.toggled then
+            module:enable(evt.player_index, evt.element.parent)
+        else
+            module:disable(evt.player_index, evt.element.parent)
+        end
+        return true
+    end
+end)
 
 plugin_data.button_clicked.register(Editor_ElementIDs.launch_export_ui, function(evt)
     popup_switchover = true
@@ -828,3 +972,5 @@ end)
 event.on_init(init)
 
 commands.add_command("debug-special", "launch Special Game Editor", cmd_launch_ui)
+
+desync_guard = true
