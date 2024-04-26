@@ -68,7 +68,7 @@ local function plugin(plugs)
             }
             
             plugs.register_element(clear_button, mu.UI_ids.editor)
-            plugs.click.register(clear_button.name, function (evt)
+            plugs.button_clicked.register(clear_button.name, function (evt)
                 self:clear_data(player_idx, list_itm)
             end, pfx("reset"))
 

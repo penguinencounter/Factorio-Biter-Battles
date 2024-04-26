@@ -149,7 +149,7 @@ local plugin = function(plugs)
             })
 
             plugs.register_element(erase_button, mu.UI_ids.editor)
-            plugs.click.register(erase_button.name, function(evt)
+            plugs.button_clicked.register(erase_button.name, function(evt)
                 self:clear_data(player_idx, list_itm)
             end, prefixer("reset"))
             container.visible = false
