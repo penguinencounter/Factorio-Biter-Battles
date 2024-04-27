@@ -1,4 +1,4 @@
-local mu = require "maps.biter_battles_v2.special_games.menu_utils"
+local mu = require "maps.biter_battles_v2.special_games.utilities"
 
 ---@class special.infinity_chest.Data : special.ModuleData
 ---@field slots LuaItemStack[]
@@ -35,24 +35,24 @@ return function(plugs)
 
         end,
         construct = function(self, player_idx, list_itm)
-            local container, options, actionbar = mu.recreate_options(list_itm, pfx)
-            mu.spacer(actionbar.add { type = "empty-widget" })
-            local clear = actionbar.add {
-                type = "sprite-button",
-                sprite = "utility/trash",
-                tooltip = "Clear this section",
-                style = "tool_button",
-                name = pfx("reset")
-            }
-            plugs.register_element(clear, mu.UI_ids.editor)
-            plugs.button_clicked.register(clear.name, function (evt)
-                self:clear_data(player_idx, list_itm)
-            end)
+            -- local container, options, actionbar = mu.recreate_options(list_itm, pfx)
+            -- mu.spacer(actionbar.add { type = "empty-widget" })
+            -- local clear = actionbar.add {
+            --     type = "sprite-button",
+            --     sprite = "utility/trash",
+            --     tooltip = "Clear this section",
+            --     style = "tool_button",
+            --     name = pfx("reset")
+            -- }
+            -- plugs.register_element(clear, mu.UI_ids.editor)
+            -- plugs.button_clicked.register(clear.name, function (evt)
+            --     self:clear_data(player_idx, list_itm)
+            -- end)
         end,
         enable = function(self, player_idx, list_itm)
         end,
         disable = function(self, player_idx, list_itm)
-            mu.rm_options(list_itm, self.id)
+            -- mu.rm_options(list_itm, self.id)
         end,
         clear_data = function(self, player_idx, list_itm)
 

@@ -1,4 +1,4 @@
-local mu = require "maps.biter_battles_v2.special_games.menu_utils"
+local mu = require "maps.biter_battles_v2.special_games.utilities"
 
 ---@class special.disabled_throws.Data : special.ModuleData
 ---@field packs {automation: boolean, logistic: boolean, military: boolean, chemical: boolean, production: boolean, utility: boolean, space: boolean}
@@ -38,14 +38,33 @@ local function ensure_data(data_store)
     if not data_store.disabled_throws then clear_data(data_store) end
 end
 
+local NAMES = {
+    reset = pfx("reset"),
+    flow = pfx("flow")
+}
+for _, v in ipairs(pack_order) do
+    NAMES[v] = pfx(v .. "_toggle")
+end
+
 ---@type special.SpecialGamePlugin
 local function plugin(plugs)
     ---@type special.SpecialGameSpec
     return {
         id = "disabled_throws",
         name = "Disable sciences",
-        const_init = function()
+        const_init = function(self)
+            for _, name in pairs(NAMES) do
+                plugs.const_register_name(name, mu.UI_ids.editor)
+            end
 
+            ---@param event EventData.on_gui_click
+            plugs.on_click.const_register(NAMES.reset, function(event)
+                local list_itm = plugs.find_list_item(event.element, self.id)
+                if not list_itm then
+                    error("couldn't figure out the list item!")
+                end
+                self:clear_data(event.player_index, list_itm)
+            end, NAMES.reset)
         end,
         construct = function(self, player_idx, list_itm)
             local container, options, actionbar = mu.recreate_options(list_itm, pfx)
@@ -61,18 +80,13 @@ local function plugin(plugs)
                 sprite = "utility/trash",
                 tooltip = "Clear this section",
                 style = "tool_button",
-                name = pfx("reset")
+                name = NAMES.reset
             }
-
-            plugs.register_element(clear_button, mu.UI_ids.editor)
-            plugs.button_clicked.register(clear_button.name, function(evt)
-                self:clear_data(player_idx, list_itm)
-            end, pfx("reset"))
 
             local flow = options.add {
                 type = "flow",
                 direction = "horizontal",
-                name = pfx("flow")
+                name = NAMES.flow
             }
 
             for _, v in ipairs(pack_order) do
@@ -82,9 +96,8 @@ local function plugin(plugs)
                     tooltip = { "item-name." .. v .. "-science-pack" },
                     state = false,
                     auto_toggle = true,
-                    name = pfx(v)
+                    name = NAMES[v]
                 }
-                plugs.register_element(toggle, mu.UI_ids.editor)
             end
             container.visible = false
         end,
@@ -133,12 +146,12 @@ local function plugin(plugs)
 
             local container, options, actionbar = mu.get_options(list_itm, pfx)
             if not options then return end
-            local button_set = options[pfx("flow")]
+            local button_set = options[NAMES.flow]
             if not button_set then return end
 
             for _, name in ipairs(pack_order) do
                 local actual_state = data.packs[name]
-                local toggle = button_set[pfx(name)]
+                local toggle = button_set[NAMES[name]]
                 toggle.toggled = actual_state
             end
         end

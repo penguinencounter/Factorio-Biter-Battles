@@ -1,4 +1,4 @@
-local mu = require "maps.biter_battles_v2.special_games.menu_utils"
+local mu = require "maps.biter_battles_v2.special_games.utilities"
 
 local slot_prefix = mu.mk_prefix("disabled_research_slot")
 
@@ -74,6 +74,14 @@ end
 
 local prefixer = mu.mk_prefix("disabled_research")
 
+local NAMES = {
+    actionbar_flow = prefixer("actionbar_flow"),
+    north = prefixer("north"),
+    south = prefixer("south"),
+    reset = prefixer("reset"),
+    grid_rows = prefixer("grid_rows"),
+}
+
 ---@type special.SpecialGamePlugin
 local plugin = function(plugs)
     ---@param evt EventData.on_gui_elem_changed
@@ -94,8 +102,18 @@ local plugin = function(plugs)
     return {
         id = "disabled_research",
         name = "Disable research",
-        const_init = function()
-            plugs.picker_changed.register_early("disabled_research", on_changed)
+        const_init = function(self)
+            for _, name in pairs(NAMES) do
+                plugs.const_register_name(name, mu.UI_ids.editor)
+            end
+            plugs.picker_changed.const_register_early("disabled_research", on_changed)
+            plugs.on_click.const_register(NAMES.reset, function(evt)
+                local list_itm = plugs.find_list_item(evt.element, self.id)
+                if not list_itm then
+                    error("couldn't figure out the list item!")
+                end
+                self:clear_data(evt.player_index, list_itm)
+            end, NAMES.reset)
         end,
         construct = function(self, player_idx, list_itm)
             local old_container = mu.get_options(list_itm, prefixer)
@@ -105,7 +123,7 @@ local plugin = function(plugs)
             local actionbar_flow = actionbar.add {
                 type = "flow",
                 direction = "horizontal",
-                name = prefixer("actionbar_flow")
+                name = NAMES.actionbar_flow
             }
             ---@diagnostic disable-next-line: missing-fields
             mu.style(actionbar_flow, {
@@ -119,13 +137,13 @@ local plugin = function(plugs)
                 type = "checkbox",
                 caption = "North",
                 state = false,
-                name = prefixer("north")
+                name = NAMES.north
             }
             local south_checkbox = actionbar_flow.add {
                 type = "checkbox",
                 caption = "South",
                 state = false,
-                name = prefixer("south")
+                name = NAMES.south
             }
             mu.spacer(actionbar.add { type = "empty-widget" })
             local erase_button = actionbar.add {
@@ -133,13 +151,13 @@ local plugin = function(plugs)
                 sprite = "utility/trash",
                 tooltip = "Clear this section",
                 style = "tool_button",
-                name = prefixer("reset")
+                name = NAMES.reset
             }
 
             local grid_rows = options.add {
                 type = "flow",
                 direction = "vertical",
-                name = prefixer("grid_rows")
+                name = NAMES.grid_rows
             }
             -- Up to 12 per row.
             ---@diagnostic disable-next-line: missing-fields
@@ -147,11 +165,6 @@ local plugin = function(plugs)
                 vertical_spacing = 4,
                 padding = 4,
             })
-
-            plugs.register_element(erase_button, mu.UI_ids.editor)
-            plugs.button_clicked.register(erase_button.name, function(evt)
-                self:clear_data(player_idx, list_itm)
-            end, prefixer("reset"))
             container.visible = false
         end,
         enable = function(self, player_idx, list_itm)
@@ -207,13 +220,13 @@ local plugin = function(plugs)
                 return
             end
 
-            local north_checkbox = actionbar[prefixer("actionbar_flow")][prefixer("north")]
+            local north_checkbox = actionbar[NAMES.actionbar_flow][NAMES.north]
             if not (north_checkbox and north_checkbox.valid) then
                 print("Invalid north checkbox")
                 return
             end
 
-            local south_checkbox = actionbar[prefixer("actionbar_flow")][prefixer("south")]
+            local south_checkbox = actionbar[NAMES.actionbar_flow][NAMES.south]
             if not (south_checkbox and south_checkbox.valid) then
                 print("Invalid south checkbox")
                 return
@@ -222,7 +235,7 @@ local plugin = function(plugs)
             north_checkbox.state = data.north_enabled
             south_checkbox.state = data.south_enabled
 
-            rebuild_slots(ec, options[prefixer("grid_rows")], plugs.register_element)
+            rebuild_slots(ec, options[NAMES.grid_rows], plugs.register_element)
         end
     }
 end
