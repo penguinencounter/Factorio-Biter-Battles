@@ -1,6 +1,6 @@
 -- "Custom Lua" special game (?)
 
-local mu = require "maps.biter_battles_v2.special_games.menu_utils"
+local mu = require "maps.biter_battles_v2.special_games.utilities"
 
 local pfx = mu.mk_prefix("special_editor_arbitrary")
 
@@ -23,14 +23,30 @@ local function ensure_data(data_store)
     if not data_store.arbitrary then clear_data(data_store) end
 end
 
+local NAMES = {
+    clear_button = pfx("reset"),
+    textfield = pfx("code")
+}
+
 ---@type special.SpecialGamePlugin
 local plugin = function(plugs)
     ---@type special.SpecialGameSpec
     return {
         id = "arbitrary",
         name = "Custom Lua",
-        const_init = function()
+        const_init = function(self)
+            for _, name in pairs(NAMES) do
+                plugs.const_register_name(name, mu.UI_ids.editor)
+            end
 
+            ---@param event EventData.on_gui_click
+            plugs.on_click.const_register(NAMES.clear_button, function(event)
+                local list_itm = plugs.find_list_item(event.element, self.id)
+                if not list_itm then
+                    error("couldn't figure out the list item!")
+                end
+                self:clear_data(event.player_index, list_itm)
+            end, pfx("reset"))
         end,
         construct = function(self, player_idx, list_itm)
             local old_container = mu.get_options(list_itm, pfx)
@@ -43,12 +59,12 @@ local plugin = function(plugs)
                 sprite = "utility/trash",
                 tooltip = "Clear this section",
                 style = "tool_button",
-                name = pfx("reset")
+                name = NAMES.clear_button
             }
             local textfield = options.add {
                 type = "text-box",
                 text = "",
-                name = pfx("code")
+                name = NAMES.textfield
             }
             ---@diagnostic disable-next-line: missing-fields
             mu.style(textfield, {
@@ -58,12 +74,6 @@ local plugin = function(plugs)
                 minimal_height = 400,
                 maximal_width = 9999999,
             })
-
-            plugs.register_element(clear_button, mu.UI_ids.editor)
-            -- this will overwrite the previous handler, if there is one
-            plugs.button_clicked.register(clear_button.name, function()
-                self:clear_data(player_idx, list_itm)
-            end, pfx("reset"))
             container.visible = false
         end,
         enable = function(self, player_idx, list_itm)
@@ -111,7 +121,7 @@ local plugin = function(plugs)
 
             local container, options, actionbar = mu.get_options(list_itm, pfx)
             if not options then return end
-            local textfield = options[pfx("code")]
+            local textfield = options[NAMES.textfield]
             if not textfield then return end
             textfield.text = data.code
         end

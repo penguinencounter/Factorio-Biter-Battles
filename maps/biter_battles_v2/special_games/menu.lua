@@ -1,5 +1,5 @@
 local event = require "utils.event"
-local mu = require "maps.biter_battles_v2.special_games.menu_utils"
+local mu = require "maps.biter_battles_v2.special_games.utilities"
 -- Special game toolbox.
 
 -- List of special games to load.
@@ -28,6 +28,7 @@ local SOURCES = {
 ---
 ---@field player_index integer
 ---@field open { [special.UI_ids]?: LuaGuiElement }
+---@field popups LuaGuiElement[]
 ---@field editor_conf special.EditorConf
 
 ---@class special.this
@@ -35,13 +36,15 @@ local SOURCES = {
 ---@field ui_bindings table<string, special.UI_ids>
 ---@field event_handlers { [string]: { early: { [string]: integer }, standard: { [string]: integer[] } } }
 local this = setmetatable({}, {
-    __index = function (t, k)
+    __index = function(t, k)
         return global.special_game_toolbox[k]
     end,
-    __newindex = function (t, k, v)
+    __newindex = function(t, k, v)
         global.special_game_toolbox[k] = v
     end
 })
+
+-- note: maybe use Token from the rest of the game instead?
 
 -- Set to true at the end of the file, before any of the game events have run.
 -- Setting to true exits the 'constant init phase'.
@@ -65,14 +68,6 @@ local function const_register_callable(func)
     local idx = #callback_alias + 1
     callback_alias[idx] = func
     return idx
-end
-
-local function init()
-    global.special_game_toolbox = {
-        players = {},
-        ui_bindings = {},
-        event_handlers = {}
-    }
 end
 
 ---@return special.PlayerData
@@ -121,8 +116,18 @@ local function validate_player(player_idx)
 end
 local listbox_prefixer = mu.mk_prefix("special_game_list")
 
+---Mapping between element names and their UI set.
+---Set this table directly to register constant names.
+---Set `this.ui_bindings` to register names during runtime.
 ---@type table<string, special.UI_ids>
-local click_to_ui_lut = {}
+local element_ui_map = setmetatable(
+    {},
+    {
+        __index = function(_, k)
+            return this.ui_bindings[k]
+        end
+    }
+)
 
 local Editor_ElementIDs
 do
@@ -144,7 +149,7 @@ do
         clear_all = prefix("clear_all"),
     }
     for _, v in pairs(Editor_ElementIDs) do
-        click_to_ui_lut[v] = mu.UI_ids.editor
+        element_ui_map[v] = mu.UI_ids.editor
     end
 end
 
@@ -160,7 +165,7 @@ do
         output = prefix("output"),
     }
     for _, v in pairs(EditorExport_ElementIDs) do
-        click_to_ui_lut[v] = mu.UI_ids.editor_export
+        element_ui_map[v] = mu.UI_ids.editor_export
     end
 end
 
@@ -168,7 +173,7 @@ end
 ---@param element LuaGuiElement
 ---@param ui_id special.UI_ids
 local function register_element(element, ui_id)
-    click_to_ui_lut[element.name] = ui_id
+    element_ui_map[element.name] = ui_id
 end
 
 ---@generic T
@@ -184,7 +189,7 @@ end
 ---@field unregister fun(target: string, name: string | fun(evt: table))
 ---@field fire fun(data: table, target_name: string)
 
--- FIXME: This will not work in multiplayer. 
+-- FIXME: This will not work in multiplayer.
 --        People will be stepping on each others' toes (event handlers) all over the place.
 --        Will also almost certainly desync, because plugin_data is not const.
 ---@return special.EventRegisterFuncs
@@ -262,19 +267,30 @@ local plugin_data = {
 }
 
 ---Declare that an element is associated with a UI.
----@param element any
----@param ui_id any
+---@param element LuaGuiElement
+---@param ui_id special.UI_ids
 local function register_element_v2(element, ui_id)
     this.ui_bindings = this.ui_bindings
     this.ui_bindings[element.name] = ui_id
 end
 
+---@param element_name string
+---@param ui_id special.UI_ids
+local function const_register_name(element_name, ui_id)
+    if desync_guard then error("Cannot register names using const_register_name outside of const init phase.", 2) end
+    element_ui_map[element_name] = ui_id
+end
+
 ---@class special.EventRegisterFuncs2
 ---@field const_register_early fun(name: string, callback: integer | fun(evt: table): boolean | nil)
 ---@field register_early_global fun(name: string, callback_id: integer)
----@field const_register fun(target: string, callback: (integer | fun(evt: table)), name: string)
----@field register_global fun(target: string, callback_id: integer, name: string)
+---@field const_register fun(target: string, callback: (integer | fun(evt: table)), name: string?)
+---@field register_global fun(target: string, callback_id: integer, name: string?)
 ---@field emit fun(name: string, player: integer, event_data: table)
+
+---Event handlers to initialize with init().
+---@type string[]
+local queued_event_handlers = {}
 
 ---@param event_id string Event id. Used to manage storage.
 ---@return special.EventRegisterFuncs2
@@ -284,25 +300,22 @@ local function create_event(event_id)
     ---@type { [string]: { [string | fun(evt: table)]: fun(evt: table) } }
     local const_standard = {}
 
-    this.event_handlers[event_id] = {
-        early = {},
-        standard = {}
-    }
+    queued_event_handlers[#queued_event_handlers + 1] = event_id
 
     local runtime_early = setmetatable({}, {
-        __index = function (t, k)
+        __index = function(t, k)
             return this.event_handlers[event_id].early[k]
         end,
-        __newindex = function (t, k, v)
+        __newindex = function(t, k, v)
             this.event_handlers[event_id].early[k] = v
         end
     })
 
     local runtime_standard = setmetatable({}, {
-        __index = function (t, k)
+        __index = function(t, k)
             return this.event_handlers[event_id].standard[k]
         end,
-        __newindex = function (t, k, v)
+        __newindex = function(t, k, v)
             this.event_handlers[event_id].standard[k] = v
         end
     })
@@ -322,10 +335,10 @@ local function create_event(event_id)
             end
             const_early[name] = resolved_callback
         end,
-        register_early_global = function (name, callback_id)
+        register_early_global = function(name, callback_id)
             runtime_early[name] = callback_id
         end,
-        const_register = function (target, callback, name)
+        const_register = function(target, callback, name)
             if desync_guard then error("Cannot create const event registrations outside of const init phase.", 2) end
             ---@type fun(evt: table)
             local resolved_callback
@@ -343,7 +356,7 @@ local function create_event(event_id)
             runtime_standard[target][name or callback_id] = callback_id
         end,
 
-        emit = function (target_name, player, event_data)
+        emit = function(target_name, player, event_data)
             local actioned = {}
             local function error_handler(e)
                 log('[ERROR] In UI event handler: ' .. e)
@@ -360,14 +373,14 @@ local function create_event(event_id)
             end
 
             for name, callable in pairs(const_early) do
-                actioned[#actioned+1] = name
+                actioned[#actioned + 1] = name
                 local ok, val = xpcall(callable, error_handler, event_data)
                 if not ok then error(val) end
                 if val then return end
             end
             -- can't use runtime_early because it's a half-baked proxy, so a pairs() doesn't work
             for name, callable_ref in pairs(this.event_handlers[event_id].early) do
-                actioned[#actioned+1] = name
+                actioned[#actioned + 1] = name
                 local callable = get_alias(callable_ref)
                 local ok, val = xpcall(callable, error_handler, event_data)
                 if not ok then error(val) end
@@ -376,7 +389,7 @@ local function create_event(event_id)
             local const_callbacks = const_standard[target_name]
             if const_callbacks then
                 for name, callable in pairs(const_callbacks) do
-                    actioned[#actioned+1] = name
+                    actioned[#actioned + 1] = name
                     local ok, err = xpcall(callable, error_handler, event_data)
                     if not ok then error(err) end
                 end
@@ -384,7 +397,7 @@ local function create_event(event_id)
             local runtime_callbacks = runtime_standard[target_name]
             if runtime_callbacks then
                 for name, callable_ref in pairs(runtime_callbacks) do
-                    actioned[#actioned+1] = name
+                    actioned[#actioned + 1] = name
                     local callable = get_alias(callable_ref)
                     local ok, err = xpcall(callable, error_handler, event_data)
                     if not ok then error(err) end
@@ -394,21 +407,49 @@ local function create_event(event_id)
     }
 end
 
-local pluginAPIV2 = {
+---@type fun(child: LuaGuiElement, plugin_id: string): LuaGuiElement | nil
+local find_list_item
+do
+    local find_list_item_memo = setmetatable({}, { __mode = 'kv' })
+    ---@param child LuaGuiElement
+    ---@param plugin_id string
+    ---@return LuaGuiElement | nil
+    function find_list_item(child, plugin_id)
+        if find_list_item_memo[child] then
+            return find_list_item_memo[child]
+        end
+        local target_name = listbox_prefixer(plugin_id)
+        local parent = child
+        while parent do
+            if parent.name == target_name then
+                find_list_item_memo[child] = parent
+                return parent
+            end
+            parent = parent.parent
+        end
+        return nil
+    end
+end
+
+---@class special.PluginAPIV2
+local plugin_api_v2 = {
     get_player_storage = get_player_storage,
     erase_player_storage = erase_player_storage,
     validate_player = validate_player,
+    const_register_name = const_register_name,
     register_element = register_element_v2,
     const_register_callable = const_register_callable,
+    find_list_item = find_list_item,
 
-    button_clicked = create_event("button_clicked"),
+    on_click = create_event("on_click"),
+    picker_changed = create_event("picker_changed"),
 }
 
 ---@class special.SpecialGameSpec
 ---@field id string
 ---@field name string
 ---Called during the module registration phase.
----@field const_init fun()
+---@field const_init fun(self: special.SpecialGameSpec)
 ---Called when the UI needs to be (re)created.
 ---@field construct fun(self: special.SpecialGameSpec, player_idx: integer, list_itm: LuaGuiElement)
 ---Called when the module is enabled.
@@ -420,7 +461,7 @@ local pluginAPIV2 = {
 ---Centralized "refresh info" function. Load data from storage and update the UI.
 ---@field refresh_ui fun(self: special.SpecialGameSpec, player_idx: integer, list_itm: LuaGuiElement)
 
----@alias special.SpecialGamePlugin fun(plug: special.SpecialGamePluginData): special.SpecialGameSpec
+---@alias special.SpecialGamePlugin fun(plug: special.PluginAPIV2): special.SpecialGameSpec
 
 ---@type { [string]: special.SpecialGameSpec }
 local SpecialGames = {}
@@ -429,7 +470,7 @@ local SpecialGames = {}
 local function add_source(name)
     ---@type special.SpecialGamePlugin
     local func = require("maps.biter_battles_v2.special_games." .. name)
-    local spec = func(plugin_data)
+    local spec = func(plugin_api_v2)
     SpecialGames[spec.id] = spec
 end
 
@@ -536,6 +577,14 @@ local function export_ui(player_id)
 
     player.opened = export_UI
     get_player_storage(player_id).open[mu.UI_ids.editor_export] = export_UI
+end
+
+--- Prepares UI elements.
+local function const_generate_init_ui_names()
+    for k, _ in pairs(SpecialGames) do
+        local name = mu.mk_prefix(listbox_prefixer(k))("toggle")
+        plugin_api_v2.const_register_name(name, mu.UI_ids.editor)
+    end
 end
 
 ---Initializes the Special Game UI.
@@ -818,7 +867,8 @@ local function quit_export(player)
     ---@type LuaGuiElement | nil
     local focus_after = nil
     if player_data.open[mu.UI_ids.editor] and player_data.open[mu.UI_ids.editor].valid then
-        log("[Info] Switching focus to " .. tostring(player_data.open[mu.UI_ids.editor] and player_data.open[mu.UI_ids.editor].name))
+        log("[Info] Switching focus to " ..
+            tostring(player_data.open[mu.UI_ids.editor] and player_data.open[mu.UI_ids.editor].name))
         focus_after = player_data.open[mu.UI_ids.editor]
         player_data.open[mu.UI_ids.editor].focus()
     end
@@ -854,11 +904,14 @@ end
 add_sources(SOURCES)
 
 for k, v in pairs(SpecialGames) do
-    v.const_init()
+    v:const_init()
     log("Special game " .. k .. " registered.")
 end
 
-plugin_data.button_clicked.register_early("toggle buttons", function(evt)
+-- generate UI item names
+const_generate_init_ui_names()
+
+plugin_api_v2.on_click.const_register_early("toggle buttons", function(evt)
     if not (evt.element and evt.element.valid) then return end
     if evt.element.name:match("^" .. listbox_prefixer("")) then
         local module_name = evt.element.name:match("^" .. listbox_prefixer("(.-)_toggle$"))
@@ -879,21 +932,21 @@ plugin_data.button_clicked.register_early("toggle buttons", function(evt)
     end
 end)
 
-plugin_data.button_clicked.register(Editor_ElementIDs.launch_export_ui, function(evt)
+plugin_api_v2.on_click.const_register(Editor_ElementIDs.launch_export_ui, function(evt)
     popup_switchover = true
     export_ui(evt.player_index)
     popup_switchover = false
 end)
 
-plugin_data.button_clicked.register(Editor_ElementIDs.toplevel_quit_btn, function(evt)
+plugin_api_v2.on_click.const_register(Editor_ElementIDs.toplevel_quit_btn, function(evt)
     quit_editor(game.players[evt.player_index])
 end)
 
-plugin_data.button_clicked.register(EditorExport_ElementIDs.toplevel_quit_btn, function(evt)
+plugin_api_v2.on_click.const_register(EditorExport_ElementIDs.toplevel_quit_btn, function(evt)
     quit_export(game.players[evt.player_index])
 end)
 
-plugin_data.button_clicked.register(Editor_ElementIDs.clear_all, function(evt)
+plugin_api_v2.on_click.const_register(Editor_ElementIDs.clear_all, function(evt)
     local player_data = get_player_storage(evt.player_index)
     for _, v in pairs(SpecialGames) do
         -- Try to find the toggle button for this module.
@@ -923,8 +976,8 @@ event.add(defines.events.on_gui_closed, function(evt)
     if not validate_player(evt.player_index) then return end
     local player_data = get_player_storage(evt.player_index)
     local player = game.players[evt.player_index]
-    log("Screen closed " .. evt.element.name .. " -> " .. tostring(player.opened and player.opened.name))
     if not evt.element then return end
+    log("Screen closed " .. evt.element.name .. " -> " .. tostring(player.opened and player.opened.name))
 
     if evt.element == player_data.open[mu.UI_ids.editor] then
         if not popup_switchover then
@@ -936,7 +989,7 @@ event.add(defines.events.on_gui_closed, function(evt)
 end)
 
 local function check_gui_interaction(name, player_idx)
-    local screen_name = click_to_ui_lut[name]
+    local screen_name = element_ui_map[name]
     if not screen_name then return end -- Not an element we care about.
 
     if not validate_player(player_idx) then
@@ -959,15 +1012,30 @@ end
 event.add(defines.events.on_gui_click, function(e)
     if not (e.element and e.element.valid) then return end
     if not check_gui_interaction(e.element.name, e.player_index) then return end
-    plugin_data.button_clicked.fire(e, e.element.name)
+    plugin_api_v2.on_click.emit(e.element.name, e.player_index, e)
 end)
 
 ---@param e EventData.on_gui_elem_changed
 event.add(defines.events.on_gui_elem_changed, function(e)
     if not (e.element and e.element.valid) then return end
     if not check_gui_interaction(e.element.name, e.player_index) then return end
-    plugin_data.picker_changed.fire(e, e.element.name)
+    plugin_api_v2.picker_changed.emit(e.element.name, e.player_index, e)
 end)
+
+
+local function init()
+    global.special_game_toolbox = {
+        players = {},
+        ui_bindings = {},
+        event_handlers = {}
+    }
+    for _, event_id in ipairs(queued_event_handlers) do
+        this.event_handlers[event_id] = {
+            early = {},
+            standard = {}
+        }
+    end
+end
 
 event.on_init(init)
 

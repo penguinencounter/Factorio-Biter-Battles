@@ -1,4 +1,4 @@
-local mu = require "maps.biter_battles_v2.special_games.menu_utils"
+local mu = require "maps.biter_battles_v2.special_games.utilities"
 
 ---@type special.SpecialGamePlugin
 return function(plugs)
