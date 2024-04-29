@@ -106,7 +106,7 @@ local plugin = function(plugs)
             for _, name in pairs(NAMES) do
                 plugs.const_register_name(name, mu.UI_ids.editor)
             end
-            plugs.picker_changed.const_register_early("disabled_entities", on_changed)
+            plugs.on_gui_element_changed.const_register_early("disabled_entities", on_changed)
             plugs.on_click.const_register(NAMES.reset, function(evt)
                 local list_itm = plugs.find_list_item(evt.element, self.id)
                 if not list_itm then
