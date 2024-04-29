@@ -30,7 +30,10 @@ local SOURCES = {
 ---@field open { [special.UI_ids]?: LuaGuiElement }
 ---@field popups LuaGuiElement[]
 ---@field editor_conf special.EditorConf
+---@field suppress_close boolean
 
+-- TODO: investigate if ui_bindings growing over time will cause problems.
+-- this happens whenever an element is dynamically created and registered.
 ---@class special.this
 ---@field players table<integer, special.PlayerData>
 ---@field ui_bindings table<string, special.UI_ids>
@@ -44,7 +47,7 @@ local this = setmetatable({}, {
     end
 })
 
--- note: maybe use Token from the rest of the game instead?
+-- note: maybe use Token from the rest of the scenario instead?
 
 -- Set to true at the end of the file, before any of the game events have run.
 -- Setting to true exits the 'constant init phase'.
@@ -77,6 +80,8 @@ local function get_default()
         open = {},
         editor_conf = {
         },
+        popups = {},
+        suppress_close = false,
     }
 end
 
@@ -846,7 +851,8 @@ local function init_ui(player_id)
         }
     end
     player.opened = editor_UI
-    get_player_storage(player_id).open[mu.UI_ids.editor] = editor_UI
+    local store = get_player_storage(player_id)
+    store.open[mu.UI_ids.editor] = editor_UI
 end
 
 ---/debug-special command handler.
@@ -858,7 +864,7 @@ end
 
 --- Set to true to prevent closing the window.
 --- FIXME: desyncs!!!!
-local popup_switchover = false
+local suppress_close = false
 
 ---@param player LuaPlayer
 local function quit_export(player)
@@ -933,9 +939,10 @@ plugin_api_v2.on_click.const_register_early("toggle buttons", function(evt)
 end)
 
 plugin_api_v2.on_click.const_register(Editor_ElementIDs.launch_export_ui, function(evt)
-    popup_switchover = true
+    local store = get_player_storage(evt.player_index)
+    store.suppress_close = true
     export_ui(evt.player_index)
-    popup_switchover = false
+    store.suppress_close = false
 end)
 
 plugin_api_v2.on_click.const_register(Editor_ElementIDs.toplevel_quit_btn, function(evt)
@@ -980,7 +987,7 @@ event.add(defines.events.on_gui_closed, function(evt)
     log("Screen closed " .. evt.element.name .. " -> " .. tostring(player.opened and player.opened.name))
 
     if evt.element == player_data.open[mu.UI_ids.editor] then
-        if not popup_switchover then
+        if not player_data.suppress_close then
             quit_editor(player)
         end
     elseif evt.element == player_data.open[mu.UI_ids.editor_export] then
