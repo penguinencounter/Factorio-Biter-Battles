@@ -65,6 +65,20 @@ local function plugin(plugs)
                 end
                 self:clear_data(event.player_index, list_itm)
             end, NAMES.reset)
+            
+            ---@param event EventData.on_gui_click
+            local function handler(event)
+                if not (event.element and event.element.valid) then return end
+                local ec = plugs.get_player_storage(event.player_index).editor_conf
+                local this_data = ec.disabled_throws
+                local pack_info = event.element.tags.pack_name --[[@as string]]
+                if not pack_info then return end
+                this_data.packs[pack_info] = event.element.toggled
+            end
+
+            for _, v in ipairs(pack_order) do
+                plugs.on_click.const_register(NAMES[v], handler, NAMES[v])
+            end
         end,
         construct = function(self, player_idx, list_itm)
             local container, options, actionbar = mu.recreate_options(list_itm, pfx)
@@ -96,7 +110,8 @@ local function plugin(plugs)
                     tooltip = { "item-name." .. v .. "-science-pack" },
                     state = false,
                     auto_toggle = true,
-                    name = NAMES[v]
+                    name = NAMES[v],
+                    tags = {pack_name = v}
                 }
             end
             container.visible = false
