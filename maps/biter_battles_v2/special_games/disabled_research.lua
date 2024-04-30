@@ -5,7 +5,7 @@ local slot_prefix = mu.mk_prefix("disabled_research_slot")
 ---@class special.disabled_research.Data : special.ModuleData
 ---@field north_enabled boolean
 ---@field south_enabled boolean
----@field entity_list string[]
+---@field research_list string[]
 
 ---@class special.EditorConf
 ---@field disabled_research special.disabled_research.Data
@@ -15,7 +15,7 @@ local slot_prefix = mu.mk_prefix("disabled_research_slot")
 local function clear_data(data_store)
     data_store.disabled_research = {
         enabled = false,
-        entity_list = {},
+        research_list = {},
         north_enabled = true,
         south_enabled = true,
     }
@@ -43,12 +43,12 @@ end
 ---@param slot_container LuaGuiElement
 ---@param register_func fun(elem: LuaGuiElement, target: special.UI_ids)
 local function rebuild_slots(data_store, slot_container, register_func)
-    local entity_list = data_store.disabled_research.entity_list
+    local research_list = data_store.disabled_research.research_list
     -- Not the most efficient
     slot_container.clear()
 
     -- add 1 more slot than needed, so that there's a space to add a new one
-    for i = 1, #entity_list + 1 do
+    for i = 1, #research_list + 1 do
         local row_no = math.floor((i - 1) / 12)
         local row = slot_container[slot_prefix("row_" .. row_no)]
         if not row then
@@ -68,7 +68,7 @@ local function rebuild_slots(data_store, slot_container, register_func)
             name = slot_prefix(tostring(i))
         }
         register_func(slot, mu.UI_ids.editor)
-        slot.elem_value = entity_list[i]
+        slot.elem_value = research_list[i]
     end
 end
 
@@ -90,9 +90,9 @@ local plugin = function(plugs)
         local nmatch = evt.element.name:match("^" .. slot_prefix("(%d+)$"))
         if nmatch then
             local cfg = plugs.get_player_storage(evt.player_index).editor_conf
-            local size = #cfg.disabled_research.entity_list + 1
-            cfg.disabled_research.entity_list[tonumber(nmatch)] = evt.element.elem_value --[[@as string]]
-            cfg.disabled_research.entity_list = flatten(cfg.disabled_research.entity_list, size)
+            local size = #cfg.disabled_research.research_list + 1
+            cfg.disabled_research.research_list[tonumber(nmatch)] = evt.element.elem_value --[[@as string]]
+            cfg.disabled_research.research_list = flatten(cfg.disabled_research.research_list, size)
             rebuild_slots(cfg, evt.element.parent.parent, plugs.register_element)
             return true
         end

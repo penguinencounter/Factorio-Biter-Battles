@@ -54,16 +54,19 @@ return function(plugs)
                 self:clear_data(evt.player_index, list_itm)
             end, NAMES.reset)
 
+            -- use one event handler to avoid creating a new closure for every slot
+            ---@param evt EventData.on_gui_elem_changed
+            local handler = function(evt)
+                local data = plugs.get_player_storage(evt.player_index).editor_conf
+                ensure_data(data)
+                local el = evt.element
+                if not el and el.tags.slot_index then return end
+                local slot_n = el.tags.slot_index --[[@as integer]]
+                data.infinity_chest.slots[slot_n] = evt.element.elem_value --[[@as string | nil]]
+            end
+
             for i = 1, SLOTS do
-                ---@param evt EventData.on_gui_elem_changed
-                plugs.on_gui_element_changed.const_register(NAMES[i], function(evt)
-                    local data = plugs.get_player_storage(evt.player_index).editor_conf
-                    ensure_data(data)
-                    local el = evt.element
-                    if not el and el.tags.slot_index then return end
-                    local slot_n = el.tags.slot_index --[[@as integer]]
-                    data.infinity_chest.slots[slot_n] = evt.element.elem_value --[[@as string | nil]]
-                end)
+                plugs.on_gui_element_changed.const_register(NAMES[i], handler, NAMES[i])
             end
         end,
         construct = function(self, player_idx, list_itm)
