@@ -861,11 +861,6 @@ local function cmd_launch_ui(cmd_data)
     init_ui(cmd_data.player_index)
 end
 
-
---- Set to true to prevent closing the window.
---- FIXME: desyncs!!!!
-local suppress_close = false
-
 ---@param player LuaPlayer
 local function quit_export(player)
     local player_data = get_player_storage(player.index)
