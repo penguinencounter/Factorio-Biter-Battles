@@ -106,7 +106,7 @@ local plugin = function(plugs)
             for _, name in pairs(NAMES) do
                 plugs.const_register_name(name, mu.UI_ids.editor)
             end
-            plugs.on_gui_element_changed.const_register_early("disabled_research", on_changed)
+            plugs.on_element_changed.const_register_early("disabled_research", on_changed)
             plugs.on_click.const_register(NAMES.reset, function(evt)
                 local list_itm = plugs.find_list_item(evt.element, self.id)
                 if not list_itm then
@@ -114,6 +114,22 @@ local plugin = function(plugs)
                 end
                 self:clear_data(evt.player_index, list_itm)
             end, NAMES.reset)
+
+            ---@param evt EventData.on_gui_checked_state_changed
+            local function save_checkboxes(evt)
+                local player = evt.player_index
+                local list_itm = plugs.find_list_item(evt.element, self.id)
+                if not list_itm then return end
+                local container, options, actionbar = mu.get_options(list_itm, prefixer)
+                if not (actionbar and actionbar.valid) then return end
+                local ec = plugs.get_player_storage(player).editor_conf
+                ensure_data(ec)
+                ec.disabled_entities.north_enabled = actionbar[NAMES.actionbar_flow][NAMES.north].state
+                ec.disabled_entities.south_enabled = actionbar[NAMES.actionbar_flow][NAMES.south].state
+            end
+
+            plugs.on_checked_state_changed.const_register(NAMES.north, save_checkboxes, NAMES.north)
+            plugs.on_checked_state_changed.const_register(NAMES.south, save_checkboxes, NAMES.south)
         end,
         construct = function(self, player_idx, list_itm)
             local old_container = mu.get_options(list_itm, prefixer)

@@ -447,7 +447,8 @@ local plugin_api_v2 = {
     find_list_item = find_list_item,
 
     on_click = create_event("on_click"),
-    on_gui_element_changed = create_event("on_gui_element_changed"),
+    on_element_changed = create_event("on_element_changed"),
+    on_checked_state_changed = create_event("on_checked_state_changed"),
 }
 
 ---@class special.SpecialGameSpec
@@ -1021,7 +1022,7 @@ end)
 event.add(defines.events.on_gui_elem_changed, function(e)
     if not (e.element and e.element.valid) then return end
     if not check_gui_interaction(e.element.name, e.player_index) then return end
-    plugin_api_v2.on_gui_element_changed.emit(e.element.name, e.player_index, e)
+    plugin_api_v2.on_element_changed.emit(e.element.name, e.player_index, e)
 end)
 
 

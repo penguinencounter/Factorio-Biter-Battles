@@ -66,7 +66,7 @@ return function(plugs)
             end
 
             for i = 1, SLOTS do
-                plugs.on_gui_element_changed.const_register(NAMES[i], handler, NAMES[i])
+                plugs.on_element_changed.const_register(NAMES[i], handler, NAMES[i])
             end
         end,
         construct = function(self, player_idx, list_itm)
